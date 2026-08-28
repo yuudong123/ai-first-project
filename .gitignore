@@ -1,0 +1,33 @@
+# Local datasets and generated artifacts
+data/raw/
+data/processed/
+artifacts/
+models/
+mlruns/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Unity generated folders and WebGL builds
+unity/Library/
+unity/Temp/
+unity/Logs/
+unity/Obj/
+unity/Build/
+unity/Builds/
+
