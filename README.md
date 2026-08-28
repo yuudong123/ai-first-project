@@ -16,7 +16,7 @@
 
 - [프로젝트 기획 및 조사](docs/project-research.md)
 - [확정 팀 마일스톤](docs/team-milestones.md)
-- [4인 팀 역할 및 작업 명세](docs/team-task-board.md)
+- [팀 상세 작업 명세](docs/team-task-board.md)
 
 ## 데이터
 
