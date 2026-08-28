@@ -23,11 +23,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Unity generated folders and WebGL builds
-unity/Library/
-unity/Temp/
-unity/Logs/
-unity/Obj/
-unity/Build/
-unity/Builds/
-
+tools/
