@@ -1,0 +1,9 @@
+pandas
+numpy
+matplotlib
+scikit-learn
+joblib
+tensorflow
+kafka-python
+fastapi
+uvicorn[standard]
