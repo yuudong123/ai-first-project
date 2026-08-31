@@ -33,3 +33,5 @@ unity/Builds/
 
 # kafka 부분
 kafka/latest_data.json
+kafka/latest_raw.json
+kafka/latest_raw.json.tmp
