@@ -4,6 +4,7 @@ data/processed/
 artifacts/
 models/
 mlruns/
+tools/
 
 # Python
 .venv/
@@ -22,12 +23,3 @@ __pycache__/
 .vscode/
 .DS_Store
 Thumbs.db
-
-# Unity generated folders and WebGL builds
-unity/Library/
-unity/Temp/
-unity/Logs/
-unity/Obj/
-unity/Build/
-unity/Builds/
-
