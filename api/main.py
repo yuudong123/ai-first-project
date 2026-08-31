@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -55,6 +56,15 @@ class DataResponse(BaseModel):
 
 
 app = FastAPI(title="Hydraulic Monitoring API (Kafka)", version="3.0.0")
+
+# 웹 대시보드(web/index.html)를 로컬 파일로 열거나 다른 포트에서 서빙해도
+# fetch()로 이 API를 호출할 수 있도록 모든 출처를 허용한다 (로컬 개발용).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health", response_model=HealthResponse, summary="서버 상태 확인")
