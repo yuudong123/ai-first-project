@@ -31,3 +31,5 @@ unity/Obj/
 unity/Build/
 unity/Builds/
 
+# kafka 부분
+kafka/latest_data.json
