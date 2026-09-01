@@ -1,8 +1,9 @@
-"""V5 Virtual Factory Producer with a live environmental drift demo.
+"""V5 Virtual Factory Producer for permanent NORMAL and Drift Demo modes.
 
-Runtime pipeline:
+Runtime pipelines:
 
-    fixed V5 NORMAL model -> temperature environment offset -> Kafka Raw topic
+    normal-live: fixed V5 NORMAL model -> Kafka Raw topic
+    drift-demo: fixed V5 NORMAL model -> temperature offset -> Kafka Raw topic
 
 The drift is intentionally injected for this project demonstration and is not
 a UCI label.  Kafka messages contain only timestamp and 17 sensor values; the
@@ -49,6 +50,7 @@ MODEL_FILE = MODEL_DIR / "virtual_factory_generator_v5.keras"
 INPUT_SCALER_FILE = MODEL_DIR / "input_scaler_v5.joblib"
 OFFSET_SCALER_FILE = MODEL_DIR / "offset_scaler_v5.joblib"
 BOUNDS_FILE = MODEL_DIR / "sensor_bounds_v5.npz"
+METADATA_FILE = MODEL_DIR / "generator_metadata_v5.json"
 
 LIVE_OUTPUT_FILE = DATA_DIR / "v5_drift_live_300s.csv"
 NORMAL_REFERENCE_FILE = DATA_DIR / "v5_normal_live_reference_300s.csv"
@@ -126,6 +128,12 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="HydroTwin V5 live environmental drift producer"
     )
+    parser.add_argument(
+        "--mode",
+        choices=("normal-live", "drift-demo"),
+        default="normal-live",
+        help="normal-live runs forever; drift-demo keeps the finite scenario",
+    )
     parser.add_argument("--broker", default=DEFAULT_BROKER)
     parser.add_argument("--topic", default=DEFAULT_TOPIC)
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL)
@@ -156,7 +164,7 @@ def validate_raw_message(message, sensor_names):
         raise ValueError("Raw message sensor names/order changed")
     forbidden = {
         "drift", "scenario", "phase", "normal", "fault", "label",
-        "risk", "prediction", "confidence", "generator", "model",
+        "risk", "prediction", "confidence", "generator", "model", "features",
     }
     serialized = json.dumps(message).lower()
     if any(word in serialized for word in forbidden):
@@ -197,6 +205,16 @@ def main():
     with np.load(BOUNDS_FILE, allow_pickle=False) as bounds_file:
         sensor_min = bounds_file["sensor_min"]
         sensor_max = bounds_file["sensor_max"]
+    with open(METADATA_FILE, "r", encoding="utf-8") as metadata_file:
+        metadata = json.load(metadata_file)
+    if metadata.get("version") != "v5":
+        raise ValueError("Unexpected V5 metadata version")
+    if metadata.get("sensor_names") != sensor_names:
+        raise ValueError("V5 metadata sensor names/order changed")
+    if metadata.get("window_size") != WINDOW_SIZE:
+        raise ValueError("V5 metadata window size changed")
+    if metadata.get("cycle_seconds") != CYCLE_SECONDS:
+        raise ValueError("V5 metadata cycle length changed")
 
     runtime = V5NormalRuntime(
         model,
@@ -215,6 +233,51 @@ def main():
         acks="all",
         retries=5,
     )
+
+    if args.mode == "normal-live":
+        print("=" * 90)
+        print("HydroTwin V5 Virtual Factory - Permanent NORMAL LIVE")
+        print("=" * 90)
+        print(f"Broker / Topic : {args.broker} / {args.topic}")
+        print(f"Seed Record    : {seed_record}")
+        print(f"Interval       : {args.interval:.3f} sec")
+        print("Duration       : unlimited (until process stop)")
+        print("V5 Model       : loaded")
+        print("Runtime        : load_model() + scaler load + predict() only")
+        print("Kafka Schema   : timestamp + 17 sensors only")
+        print("DRIFT STATUS   : OFF", flush=True)
+
+        next_send_time = time.monotonic()
+        elapsed_sec = 0
+        try:
+            while True:
+                normal_values = runtime.predict_next()
+                message = create_message(sensor_names, normal_values)
+                validate_raw_message(message, sensor_names)
+                producer.send(args.topic, value=message).get(timeout=10)
+                values = message["sensors"]
+                print(
+                    "[sent %6d] TS1=%8.3f TS2=%8.3f PS1=%9.3f"
+                    % (
+                        elapsed_sec,
+                        values["TS1"],
+                        values["TS2"],
+                        values["PS1"],
+                    ),
+                    flush=True,
+                )
+
+                elapsed_sec += 1
+                next_send_time += args.interval
+                sleep_seconds = next_send_time - time.monotonic()
+                if sleep_seconds > 0:
+                    time.sleep(sleep_seconds)
+        except KeyboardInterrupt:
+            print("\nV5 NORMAL LIVE stopped by operator.", flush=True)
+        finally:
+            producer.flush()
+            producer.close()
+        return
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     live_file = open(LIVE_OUTPUT_FILE, "w", newline="", encoding="utf-8")

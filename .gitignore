@@ -28,3 +28,5 @@ Thumbs.db
 kafka/latest_data.json
 kafka/latest_raw.json
 kafka/latest_raw.json.tmp
+kafka/logs/
+kafka/run/
