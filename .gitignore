@@ -4,6 +4,7 @@ data/processed/
 artifacts/
 models/
 mlruns/
+tools/
 
 # Python
 .venv/
@@ -29,11 +30,3 @@ kafka/latest_raw.json
 kafka/latest_raw.json.tmp
 kafka/logs/
 kafka/run/
-# Unity generated folders and WebGL builds
-unity/Library/
-unity/Temp/
-unity/Logs/
-unity/Obj/
-unity/Build/
-unity/Builds/
-
