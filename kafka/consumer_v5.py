@@ -37,12 +37,25 @@ START_TIME = time.time()
 _event_counter = {"n": 0}
 
 
-def save_latest(data: dict):
-    """임시 파일에 쓴 뒤 원자적으로 교체 (API가 읽는 도중 파일이 깨지는 것을 방지)"""
+def save_latest(data: dict, max_retries: int = 8, retry_delay: float = 0.05):
+    """임시 파일에 쓴 뒤 원자적으로 교체 (API가 읽는 도중 파일이 깨지는 것을 방지).
+
+    Windows는 다른 프로세스(API 서버)가 그 순간 파일을 읽고 있으면
+    교체(replace)를 PermissionError로 거부하는 경우가 있다 (Linux/Mac은 허용).
+    아주 짧게(초 단위 이하) 재시도하면 대부분 다음 시도에서 통과한다.
+    """
     tmp_path = OUTPUT_PATH.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp_path.replace(OUTPUT_PATH)
+
+    for attempt in range(max_retries):
+        try:
+            tmp_path.replace(OUTPUT_PATH)
+            return
+        except PermissionError:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(retry_delay)
 
 
 def handle_message(payload: dict) -> dict:
@@ -72,20 +85,30 @@ def handle_message(payload: dict) -> dict:
 
 
 def main():
+    # 실행할 때마다 새로운 group_id를 써서, 카프카가 기억해둔 예전 커밋 위치를
+    # 무시하고 항상 "지금 이 순간부터" 들어오는 메시지만 받는다.
+    # (group_id를 고정해두면 재시작할 때 밀린 메시지부터 이어받게 됨)
+    run_group_id = f"hydraulic-raw-consumer-{time.time_ns()}"
+
     print(f"Raw Consumer 시작 (broker={BROKER}, topic={TOPIC})")
     consumer = KafkaConsumer(
         TOPIC,
         bootstrap_servers=BROKER,
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         auto_offset_reset="latest",
-        group_id="hydraulic-raw-consumer-group",
+        group_id=run_group_id,
+        enable_auto_commit=False,  # 이 그룹은 매번 새로 버려지므로 커밋 자체가 의미 없음
     )
 
     print("메시지 대기 중...")
     for message in consumer:
         payload = message.value
-        result = handle_message(payload)
-        print(f"[raw_consumer] event_id={result['event_id']} 수신 -> latest_raw.json 저장")
+        try:
+            result = handle_message(payload)
+            print(f"[raw_consumer] event_id={result['event_id']} 수신 -> latest_raw.json 저장")
+        except Exception as e:
+            # 파일 저장 한 번 실패했다고 전체 스트림이 죽으면 안 됨 -> 로그만 남기고 계속 진행
+            print(f"[raw_consumer] 저장 실패 (다음 메시지로 계속 진행): {e}")
 
 
 if __name__ == "__main__":
