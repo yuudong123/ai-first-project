@@ -99,19 +99,6 @@
     margin-bottom:16px;
   }
 
-  /* ---------- 회로 다이어그램 ---------- */
-  .diagram-wrap{ min-height:420px; display:flex; align-items:center; justify-content:center; }
-  #circuit-svg{ width:100%; max-width:640px; }
-  .node-box{ fill:var(--bg-panel-2); stroke:var(--border); stroke-width:1.5; transition:stroke .4s, filter .4s; }
-  .node-box.risk-normal{ stroke:var(--normal); filter:drop-shadow(0 0 6px rgba(52,211,153,0.25)); }
-  .node-box.risk-caution{ stroke:var(--caution); filter:drop-shadow(0 0 6px rgba(251,191,36,0.25)); }
-  .node-box.risk-warning{ stroke:var(--warning); filter:drop-shadow(0 0 6px rgba(251,146,60,0.3)); }
-  .node-box.risk-danger{ stroke:var(--danger); filter:drop-shadow(0 0 8px rgba(248,113,113,0.35)); }
-  .node-label{ font-family:var(--font-display); font-size:13px; font-weight:600; fill:var(--text-primary); }
-  .node-sub{ font-family:var(--font-mono); font-size:10px; fill:var(--text-secondary); }
-  .pipe{ stroke:var(--border); stroke-width:2; fill:none; }
-  .pipe-flow{ stroke:var(--accent); stroke-width:2; fill:none; opacity:0.5; stroke-dasharray:4 6; }
-
   /* ---------- 요약 카드 ---------- */
   .summary-row{ display:flex; gap:24px; margin-top:20px; }
   .summary-card{
@@ -191,6 +178,34 @@
     text-align:center;
     padding:40px 0;
   }
+
+  /* ---------- Unity WebGL 패널 ---------- */
+  .unity-panel .panel-title{ margin-bottom:14px; }
+  .unity-wrap{
+    position:relative;
+    width:100%;
+    max-width:960px;
+    aspect-ratio:16/9;
+    background:#000;
+    border-radius:8px;
+    border:1px solid var(--border-soft);
+    overflow:hidden;
+  }
+  #unity-canvas{
+    width:100%; height:100%; display:block;
+  }
+  .unity-status{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+    background:rgba(10,15,20,0.85);
+    pointer-events:none;
+    transition:opacity .3s;
+  }
+  .unity-status.hidden{ opacity:0; }
+  .unity-status.error{ color:var(--warning); }
 </style>
 </head>
 <body>
@@ -212,40 +227,7 @@
 
 <main>
   <section class="panel">
-    <div class="panel-title">시스템 회로도</div>
-    <div class="diagram-wrap">
-      <svg id="circuit-svg" viewBox="0 0 640 380">
-        <path class="pipe" d="M 120 90 H 520" />
-        <path class="pipe" d="M 520 90 V 290" />
-        <path class="pipe" d="M 520 290 H 120" />
-        <path class="pipe" d="M 120 290 V 90" />
-        <path class="pipe-flow" d="M 120 90 H 520" />
-        <path class="pipe-flow" d="M 520 90 V 290" />
-        <path class="pipe-flow" d="M 520 290 H 120" />
-        <path class="pipe-flow" d="M 120 290 V 90" />
-
-        <g id="node-pump" transform="translate(60,60)">
-          <rect class="node-box" width="120" height="60" rx="8"/>
-          <text class="node-label" x="60" y="26" text-anchor="middle">펌프</text>
-          <text class="node-sub" id="pump-sub" x="60" y="44" text-anchor="middle">—</text>
-        </g>
-        <g id="node-valve" transform="translate(460,60)">
-          <rect class="node-box" width="120" height="60" rx="8"/>
-          <text class="node-label" x="60" y="26" text-anchor="middle">밸브</text>
-          <text class="node-sub" id="valve-sub" x="60" y="44" text-anchor="middle">—</text>
-        </g>
-        <g id="node-cooler" transform="translate(460,260)">
-          <rect class="node-box" width="120" height="60" rx="8"/>
-          <text class="node-label" x="60" y="26" text-anchor="middle">쿨러</text>
-          <text class="node-sub" id="cooler-sub" x="60" y="44" text-anchor="middle">—</text>
-        </g>
-        <g id="node-accumulator" transform="translate(60,260)">
-          <rect class="node-box" width="120" height="60" rx="8"/>
-          <text class="node-label" x="60" y="26" text-anchor="middle">어큐뮬레이터</text>
-          <text class="node-sub" id="accumulator-sub" x="60" y="44" text-anchor="middle">—</text>
-        </g>
-      </svg>
-    </div>
+    <div class="panel-title">시스템 상태 요약</div>
     <div class="summary-row">
       <div class="summary-card">
         <div class="value" id="elapsed-sec">—</div>
@@ -279,6 +261,14 @@
     </div>
   </aside>
 
+  <section class="trend-panel unity-panel">
+    <div class="panel-title">3D 디지털 트윈 (Unity)</div>
+    <div class="unity-wrap">
+      <canvas id="unity-canvas" width="960" height="540"></canvas>
+      <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
+    </div>
+  </section>
+
   <section class="trend-panel">
     <div class="panel-title">냉각 효율 · 펌프 압력 추이</div>
     <div class="chart-wrap">
@@ -289,8 +279,17 @@
 
 <script>
 const API_BASE = "http://127.0.0.1:8000";
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 1000;
 const MAX_HISTORY = 30;
+const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지연"으로 간주
+
+// ---------- Unity WebGL 연동 설정 ----------
+// Build 폴더를 web/index.html과 같은 위치(web/Build/)에 복사해서 넣어야 함.
+// 실제 파일명: pro-build.loader.js, pro-build.data.gz, pro-build.framework.js.gz, pro-build.wasm.gz
+const UNITY_BUILD_FOLDER = "Build";
+const UNITY_OBJECT_NAME = "_App";
+const UNITY_METHOD_NAME = "ApplyState";
+let unityInstance = null;
 
 const SENSOR_ORDER = ["PS1","PS2","PS3","PS4","PS5","PS6","EPS1","FS1","FS2","TS1","TS2","TS3","TS4","VS1","CE","CP","SE"];
 const SENSOR_UNITS = {
@@ -303,8 +302,10 @@ const SENSOR_UNITS = {
 const RISK_LABEL = { normal:"정상", caution:"주의", warning:"경고", danger:"위험" };
 const COMPONENT_LABEL = { pump:"펌프", valve:"밸브", cooler:"쿨러", accumulator:"어큐뮬레이터" };
 
-let pollCount = 0;
+let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
 let chart = null;
+let lastEventId = null;
+let lastChangeAt = Date.now();
 const history = { labels: [], ce: [], ps2: [] };
 
 function fmtNum(n, digits=1){
@@ -326,10 +327,16 @@ function renderTelemetry(sensors){
   });
 }
 
-function renderDiagnosis(components){
+function renderDiagnosis(prediction){
   const list = document.getElementById("diag-list");
   list.innerHTML = "";
-  Object.entries(components).forEach(([key, c]) => {
+
+  if (!prediction || prediction.status === "warming_up" || !prediction.components || Object.keys(prediction.components).length === 0){
+    list.innerHTML = `<div class="empty-state">AI 예측 대기 중 (원본 센서값 수신 단계)</div>`;
+    return;
+  }
+
+  Object.entries(prediction.components).forEach(([key, c]) => {
     const row = document.createElement("div");
     row.className = "diag-row";
     row.innerHTML = `
@@ -340,44 +347,49 @@ function renderDiagnosis(components){
       </span>
     `;
     list.appendChild(row);
-
-    // 다이어그램 노드 색상/서브텍스트 갱신
-    const nodeBox = document.querySelector(`#node-${key} .node-box`);
-    const nodeSub = document.getElementById(`${key}-sub`);
-    if (nodeBox){
-      nodeBox.classList.remove("risk-normal","risk-caution","risk-warning","risk-danger");
-      nodeBox.classList.add(`risk-${c.risk_level}`);
-    }
-    if (nodeSub){
-      nodeSub.textContent = `${(c.confidence*100).toFixed(0)}% 확신`;
-    }
   });
 }
 
 function updateHeader(data){
-  document.getElementById("cycle-id").textContent = data.cycle_id;
+  document.getElementById("cycle-id").textContent = data.event_id;
   document.getElementById("elapsed-sec").textContent = data.elapsed_sec;
 
-  const updatedAt = new Date(data.updated_at);
-  const ageSec = Math.max(0, Math.round((Date.now() - updatedAt.getTime()) / 1000));
-  document.getElementById("update-age").textContent = `${ageSec}초 전 갱신`;
+  // "생성 시각"(V5가 데이터를 만든 시점) 기준으로 경과 시간 표시.
+  // received_at은 우리 Consumer가 받은 시각이라 둘이 다를 수 있음(네트워크 지연).
+  if (data.generated_at){
+    const generatedAt = new Date(data.generated_at);
+    const ageSec = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
+    document.getElementById("update-age").textContent = `생성 후 ${ageSec}초`;
+  } else {
+    document.getElementById("update-age").textContent = "—";
+  }
 
   const dot = document.getElementById("conn-dot");
   const text = document.getElementById("conn-text");
-  const anyDanger = Object.values(data.prediction.components).some(c => c.risk_level === "danger");
+  const stalled = (Date.now() - lastChangeAt) > STALE_MS;
 
   dot.classList.remove("live","risk-danger");
-  if (anyDanger){
-    dot.classList.add("risk-danger");
-    text.textContent = "위험 감지됨";
+
+  if (stalled){
+    text.textContent = "데이터 지연";
   } else {
-    dot.classList.add("live");
-    text.textContent = "정상 수신 중";
+    const anyDanger = data.prediction && data.prediction.components
+      ? Object.values(data.prediction.components).some(c => c.risk_level === "danger")
+      : false;
+    if (anyDanger){
+      dot.classList.add("risk-danger");
+      text.textContent = "위험 감지됨";
+    } else {
+      dot.classList.add("live");
+      text.textContent = data.prediction && data.prediction.status === "warming_up"
+        ? "정상 수신 중 (AI 대기)"
+        : "정상 수신 중";
+    }
   }
 }
 
 function updateChart(data){
-  const label = `#${data.cycle_id}`;
+  const label = `#${data.event_id}`;
   history.labels.push(label);
   history.ce.push(data.sensors.CE);
   history.ps2.push(data.sensors.PS2);
@@ -445,22 +457,38 @@ function initChart(){
 
 async function poll(){
   try {
-    const res = await fetch(`${API_BASE}/data`);
+    const res = await fetch(`${API_BASE}/api/v1/state/latest`);
     if (!res.ok) {
       if (res.status === 503){
-        document.getElementById("conn-text").textContent = "Kafka Consumer 대기 중";
+        document.getElementById("conn-text").textContent = "Raw Consumer 대기 중";
         document.getElementById("conn-dot").classList.remove("live");
       }
       return;
     }
     const data = await res.json();
-    pollCount += 1;
-    document.getElementById("poll-count").textContent = pollCount;
+
+    // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
+    const isNewEvent = data.event_id !== lastEventId;
+    if (isNewEvent){
+      lastEventId = data.event_id;
+      lastChangeAt = Date.now();
+      receivedCount += 1;
+      document.getElementById("poll-count").textContent = receivedCount;
+      updateChart(data);
+
+      // 웹 UI와 동일한 JSON을 그대로 Unity에도 전달 (화면 간 값이 달라지지 않도록)
+      if (unityInstance){
+        try {
+          unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_METHOD_NAME, JSON.stringify(data));
+        } catch (err) {
+          console.error("Unity SendMessage 실패:", err);
+        }
+      }
+    }
 
     renderTelemetry(data.sensors);
-    renderDiagnosis(data.prediction.components);
+    renderDiagnosis(data.prediction);
     updateHeader(data);
-    updateChart(data);
   } catch (err) {
     document.getElementById("conn-text").textContent = "API 연결 실패";
     document.getElementById("conn-dot").classList.remove("live");
@@ -468,7 +496,50 @@ async function poll(){
   }
 }
 
+function loadUnity(){
+  const statusEl = document.getElementById("unity-status");
+  const canvas = document.getElementById("unity-canvas");
+  const buildFolder = UNITY_BUILD_FOLDER;
+  const loaderUrl = `${buildFolder}/pro-build.loader.js`;
+
+  const config = {
+    dataUrl: `${buildFolder}/pro-build.data.gz`,
+    frameworkUrl: `${buildFolder}/pro-build.framework.js.gz`,
+    codeUrl: `${buildFolder}/pro-build.wasm.gz`,
+    streamingAssetsUrl: "StreamingAssets",
+    companyName: "DefaultCompany",   // 실제 Unity Player Settings 값과 달라도 로딩엔 문제 없음
+    productName: "HydraulicDigitalTwin",
+    productVersion: "1.0",
+  };
+
+  const script = document.createElement("script");
+  script.src = loaderUrl;
+  script.onload = () => {
+    if (typeof createUnityInstance !== "function"){
+      statusEl.textContent = "Unity 로더 스크립트는 불러왔지만 createUnityInstance를 찾을 수 없음";
+      statusEl.classList.add("error");
+      return;
+    }
+    createUnityInstance(canvas, config, (progress) => {
+      statusEl.textContent = `Unity 로딩 중... ${Math.round(progress * 100)}%`;
+    }).then((instance) => {
+      unityInstance = instance;
+      statusEl.classList.add("hidden");
+    }).catch((err) => {
+      statusEl.textContent = "Unity 인스턴스 생성 실패";
+      statusEl.classList.add("error");
+      console.error("createUnityInstance 실패:", err);
+    });
+  };
+  script.onerror = () => {
+    statusEl.textContent = `Unity 빌드 파일을 못 찾음 (${loaderUrl}). web/${UNITY_BUILD_FOLDER}/ 폴더에 빌드 파일이 있는지 확인하세요.`;
+    statusEl.classList.add("error");
+  };
+  document.body.appendChild(script);
+}
+
 initChart();
+loadUnity();
 poll();
 setInterval(poll, POLL_INTERVAL_MS);
 </script>
