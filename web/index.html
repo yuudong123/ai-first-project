@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>유압 시스템 모니터링</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="chart.umd.js"></script>
+<style>
+  :root{
+    --bg-base:#0a0f14;
+    --bg-panel:#0f161d;
+    --bg-panel-2:#131b23;
+    --border:#22303b;
+    --border-soft:#1a2530;
+    --text-primary:#e6edf3;
+    --text-secondary:#7c8e9c;
+    --text-dim:#4d5c68;
+    --accent:#2fe0c4;
+    --accent-dim:rgba(47,224,196,0.12);
+    --normal:#34d399;
+    --caution:#fbbf24;
+    --warning:#fb923c;
+    --danger:#f87171;
+    --font-display:'Space Grotesk', sans-serif;
+    --font-body:'IBM Plex Sans KR', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  body{
+    background:var(--bg-base);
+    color:var(--text-primary);
+    font-family:var(--font-body);
+    min-height:100vh;
+    line-height:1.5;
+    scrollbar-width:none;       /* Firefox */
+    -ms-overflow-style:none;    /* 구형 Edge/IE */
+  }
+  body::-webkit-scrollbar{ display:none; }  /* Chrome/Safari/Edge */
+
+  /* ---------- 헤더 ---------- */
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:20px 28px;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .title-block{ display:flex; align-items:baseline; gap:14px; }
+  .title-block h1{
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:20px;
+    letter-spacing:-0.01em;
+  }
+  .title-block span{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .status-cluster{ display:flex; align-items:center; gap:20px; }
+  .status-item{
+    display:flex; align-items:center; gap:8px;
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-secondary);
+  }
+  .dot{
+    width:7px; height:7px; border-radius:50%;
+    background:var(--text-dim);
+    transition:background .3s;
+  }
+  .dot.live{
+    background:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-dim);
+  }
+  .dot.risk-danger{ background:var(--danger); box-shadow:0 0 0 3px rgba(248,113,113,0.15); }
+
+  /* ---------- 레이아웃 ---------- */
+  main{
+    display:grid;
+    grid-template-columns:1fr 340px;
+    gap:1px;
+    background:var(--border-soft);
+  }
+  @media (max-width:900px){
+    main{ grid-template-columns:1fr; }
+  }
+
+  .panel{ background:var(--bg-base); padding:24px; }
+  .panel-title{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-dim);
+    letter-spacing:0.04em;
+    margin-bottom:16px;
+  }
+
+  /* ---------- 요약 카드 ---------- */
+  .summary-row{ display:flex; gap:24px; margin-top:20px; }
+  .summary-card{
+    font-family:var(--font-mono);
+  }
+  .summary-card .value{ font-size:20px; color:var(--text-primary); }
+  .summary-card .label{ font-size:11px; color:var(--text-dim); margin-top:2px; }
+
+  /* ---------- 사이드바: 텔레메트리 ---------- */
+  .side-panel{ background:var(--bg-base); border-left:1px solid var(--border-soft); }
+  .section{ padding:22px 24px; border-bottom:1px solid var(--border-soft); }
+  .section-header{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin-bottom:14px;
+  }
+  .section-header h2{
+    font-family:var(--font-display);
+    font-size:14px; font-weight:600;
+  }
+  .section-header .count{
+    font-family:var(--font-mono);
+    font-size:11px; color:var(--accent);
+  }
+
+  .telemetry-list{
+    display:flex; flex-direction:column; gap:9px; max-height:280px; overflow-y:auto;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .telemetry-list::-webkit-scrollbar{ display:none; }
+  .telemetry-row{
+    display:flex; justify-content:space-between;
+    font-size:12.5px;
+  }
+  .telemetry-row .name{ color:var(--text-secondary); }
+  .telemetry-row .val{ font-family:var(--font-mono); color:var(--text-primary); }
+
+  .diag-list{ display:flex; flex-direction:column; gap:10px; }
+  .diag-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 10px;
+    background:var(--bg-panel);
+    border-radius:6px;
+    border:1px solid var(--border-soft);
+  }
+  .diag-row .name{ font-size:12.5px; color:var(--text-secondary); }
+  .diag-row .state{ display:flex; align-items:center; gap:7px; }
+  .diag-row .state-text{ font-family:var(--font-mono); font-size:11.5px; }
+  .badge{
+    width:7px; height:7px; border-radius:50%;
+  }
+  .badge.risk-normal{ background:var(--normal); }
+  .badge.risk-caution{ background:var(--caution); }
+  .badge.risk-warning{ background:var(--warning); }
+  .badge.risk-danger{ background:var(--danger); }
+  .state-text.risk-normal{ color:var(--normal); }
+  .state-text.risk-caution{ color:var(--caution); }
+  .state-text.risk-warning{ color:var(--warning); }
+  .state-text.risk-danger{ color:var(--danger); }
+
+  .conf-bar-track{ width:100%; height:2px; background:var(--border-soft); border-radius:2px; margin-top:6px; }
+  .conf-bar-fill{ height:100%; border-radius:2px; background:var(--text-dim); transition:width .4s; }
+
+  /* ---------- 하단 추이 차트 ---------- */
+  .trend-panel{
+    grid-column:1 / -1;
+    background:var(--bg-base);
+    padding:24px 28px 28px;
+    border-top:1px solid var(--border-soft);
+  }
+  .chart-wrap{ height:220px; }
+
+  .empty-state{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+    text-align:center;
+    padding:40px 0;
+  }
+
+  /* ---------- Unity WebGL 패널 ---------- */
+  .unity-panel .panel-title{ margin-bottom:14px; }
+  .unity-wrap{
+    position:relative;
+    width:100%;
+    max-width:960px;
+    aspect-ratio:16/9;
+    background:#000;
+    border-radius:8px;
+    border:1px solid var(--border-soft);
+    overflow:hidden;
+  }
+  #unity-canvas{
+    width:100%; height:100%; display:block;
+  }
+  .unity-status{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+    background:rgba(10,15,20,0.85);
+    pointer-events:none;
+    transition:opacity .3s;
+  }
+  .unity-status.hidden{ opacity:0; }
+  .unity-status.error{ color:var(--warning); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>유압 시스템 모니터링</h1>
+    <span id="unit-label">HYDRAULIC UNIT 01</span>
+  </div>
+  <div class="status-cluster">
+    <div class="status-item"><span>사이클 #<span id="cycle-id">—</span></span></div>
+    <div class="status-item"><span id="update-age">데이터 대기 중</span></div>
+    <div class="status-item">
+      <span class="dot" id="conn-dot"></span>
+      <span id="conn-text">연결 확인 중</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="panel-title">시스템 상태 요약</div>
+    <div class="summary-row">
+      <div class="summary-card">
+        <div class="value" id="elapsed-sec">—</div>
+        <div class="label">경과 시간 (sec)</div>
+      </div>
+      <div class="summary-card">
+        <div class="value" id="poll-count">0</div>
+        <div class="label">수신 횟수</div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="side-panel">
+    <div class="section">
+      <div class="section-header">
+        <h2>센서 텔레메트리</h2>
+        <span class="count" id="sensor-count">17 채널</span>
+      </div>
+      <div class="telemetry-list" id="telemetry-list">
+        <div class="empty-state">데이터 수신 대기 중</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>AI 진단</h2>
+      </div>
+      <div class="diag-list" id="diag-list">
+        <div class="empty-state">예측 결과 대기 중</div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="trend-panel unity-panel">
+    <div class="panel-title">3D 디지털 트윈 (Unity)</div>
+    <div class="unity-wrap">
+      <canvas id="unity-canvas" width="960" height="540"></canvas>
+      <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
+    </div>
+  </section>
+
+  <section class="trend-panel">
+    <div class="panel-title">냉각 효율 · 펌프 압력 추이</div>
+    <div class="chart-wrap">
+      <canvas id="trend-chart"></canvas>
+    </div>
+  </section>
+</main>
+
+<script>
+const API_BASE = "http://127.0.0.1:8000";
+const POLL_INTERVAL_MS = 1000;
+const MAX_HISTORY = 30;
+const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지연"으로 간주
+
+// ---------- Unity WebGL 연동 설정 ----------
+// Build 폴더를 web/index.html과 같은 위치(web/Build/)에 복사해서 넣어야 함.
+// 실제 파일명: pro-build.loader.js, pro-build.data.gz, pro-build.framework.js.gz, pro-build.wasm.gz
+const UNITY_BUILD_FOLDER = "Build";
+const UNITY_OBJECT_NAME = "_App";
+const UNITY_METHOD_NAME = "ApplyState";
+let unityInstance = null;
+
+const SENSOR_ORDER = ["PS1","PS2","PS3","PS4","PS5","PS6","EPS1","FS1","FS2","TS1","TS2","TS3","TS4","VS1","CE","CP","SE"];
+const SENSOR_UNITS = {
+  PS1:"bar", PS2:"bar", PS3:"bar", PS4:"bar", PS5:"bar", PS6:"bar",
+  EPS1:"W", FS1:"l/min", FS2:"l/min",
+  TS1:"°C", TS2:"°C", TS3:"°C", TS4:"°C",
+  VS1:"mm/s", CE:"%", CP:"kW", SE:"%",
+};
+
+const RISK_LABEL = { normal:"정상", caution:"주의", warning:"경고", danger:"위험" };
+const COMPONENT_LABEL = { pump:"펌프", valve:"밸브", cooler:"쿨러", accumulator:"어큐뮬레이터" };
+
+let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
+let chart = null;
+let lastEventId = null;
+let lastChangeAt = Date.now();
+const history = { labels: [], ce: [], ps2: [] };
+
+function fmtNum(n, digits=1){
+  return Number(n).toLocaleString("ko-KR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function renderTelemetry(sensors){
+  const list = document.getElementById("telemetry-list");
+  list.innerHTML = "";
+  SENSOR_ORDER.forEach(name => {
+    if (!(name in sensors)) return;
+    const row = document.createElement("div");
+    row.className = "telemetry-row";
+    row.innerHTML = `
+      <span class="name">${name}</span>
+      <span class="val">${fmtNum(sensors[name])} ${SENSOR_UNITS[name] || ""}</span>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function renderDiagnosis(prediction){
+  const list = document.getElementById("diag-list");
+  list.innerHTML = "";
+
+  if (!prediction || prediction.status === "warming_up" || !prediction.components || Object.keys(prediction.components).length === 0){
+    list.innerHTML = `<div class="empty-state">AI 예측 대기 중 (원본 센서값 수신 단계)</div>`;
+    return;
+  }
+
+  Object.entries(prediction.components).forEach(([key, c]) => {
+    const row = document.createElement("div");
+    row.className = "diag-row";
+    row.innerHTML = `
+      <span class="name">${COMPONENT_LABEL[key] || key}</span>
+      <span class="state">
+        <span class="badge risk-${c.risk_level}"></span>
+        <span class="state-text risk-${c.risk_level}">${RISK_LABEL[c.risk_level] || c.risk_level}</span>
+      </span>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function updateHeader(data){
+  document.getElementById("cycle-id").textContent = data.event_id;
+  document.getElementById("elapsed-sec").textContent = data.elapsed_sec;
+
+  // "생성 시각"(V5가 데이터를 만든 시점) 기준으로 경과 시간 표시.
+  // received_at은 우리 Consumer가 받은 시각이라 둘이 다를 수 있음(네트워크 지연).
+  if (data.generated_at){
+    const generatedAt = new Date(data.generated_at);
+    const ageSec = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
+    document.getElementById("update-age").textContent = `생성 후 ${ageSec}초`;
+  } else {
+    document.getElementById("update-age").textContent = "—";
+  }
+
+  const dot = document.getElementById("conn-dot");
+  const text = document.getElementById("conn-text");
+  const stalled = (Date.now() - lastChangeAt) > STALE_MS;
+
+  dot.classList.remove("live","risk-danger");
+
+  if (stalled){
+    text.textContent = "데이터 지연";
+  } else {
+    const anyDanger = data.prediction && data.prediction.components
+      ? Object.values(data.prediction.components).some(c => c.risk_level === "danger")
+      : false;
+    if (anyDanger){
+      dot.classList.add("risk-danger");
+      text.textContent = "위험 감지됨";
+    } else {
+      dot.classList.add("live");
+      text.textContent = data.prediction && data.prediction.status === "warming_up"
+        ? "정상 수신 중 (AI 대기)"
+        : "정상 수신 중";
+    }
+  }
+}
+
+function updateChart(data){
+  const label = `#${data.event_id}`;
+  history.labels.push(label);
+  history.ce.push(data.sensors.CE);
+  history.ps2.push(data.sensors.PS2);
+
+  if (history.labels.length > MAX_HISTORY){
+    history.labels.shift();
+    history.ce.shift();
+    history.ps2.shift();
+  }
+
+  chart.data.labels = history.labels;
+  chart.data.datasets[0].data = history.ce;
+  chart.data.datasets[1].data = history.ps2;
+  chart.update("none");
+}
+
+function initChart(){
+  const ctx = document.getElementById("trend-chart").getContext("2d");
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: "냉각 효율 CE (%)",
+          data: [],
+          borderColor: "#2fe0c4",
+          backgroundColor: "rgba(47,224,196,0.08)",
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.3,
+          yAxisID: "y",
+          fill: true,
+        },
+        {
+          label: "펌프 압력 PS2 (bar)",
+          data: [],
+          borderColor: "#7c8e9c",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          borderDash: [3,3],
+          tension: 0.3,
+          yAxisID: "y1",
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: "#7c8e9c", font: { family: "IBM Plex Mono", size: 11 }, boxWidth: 10 },
+        },
+      },
+      scales: {
+        x: { ticks: { color: "#4d5c68", font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: "#1a2530" } },
+        y: { position: "left", ticks: { color: "#4d5c68", font: { size: 10 } }, grid: { color: "#1a2530" } },
+        y1: { position: "right", ticks: { color: "#4d5c68", font: { size: 10 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+async function poll(){
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/state/latest`);
+    if (!res.ok) {
+      if (res.status === 503){
+        document.getElementById("conn-text").textContent = "Raw Consumer 대기 중";
+        document.getElementById("conn-dot").classList.remove("live");
+      }
+      return;
+    }
+    const data = await res.json();
+
+    // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
+    const isNewEvent = data.event_id !== lastEventId;
+    if (isNewEvent){
+      lastEventId = data.event_id;
+      lastChangeAt = Date.now();
+      receivedCount += 1;
+      document.getElementById("poll-count").textContent = receivedCount;
+      updateChart(data);
+
+      // 웹 UI와 동일한 JSON을 그대로 Unity에도 전달 (화면 간 값이 달라지지 않도록)
+      if (unityInstance){
+        try {
+          unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_METHOD_NAME, JSON.stringify(data));
+        } catch (err) {
+          console.error("Unity SendMessage 실패:", err);
+        }
+      }
+    }
+
+    renderTelemetry(data.sensors);
+    renderDiagnosis(data.prediction);
+    updateHeader(data);
+  } catch (err) {
+    document.getElementById("conn-text").textContent = "API 연결 실패";
+    document.getElementById("conn-dot").classList.remove("live");
+    console.error("poll error:", err);
+  }
+}
+
+function loadUnity(){
+  const statusEl = document.getElementById("unity-status");
+  const canvas = document.getElementById("unity-canvas");
+  const buildFolder = UNITY_BUILD_FOLDER;
+  const loaderUrl = `${buildFolder}/pro-build.loader.js`;
+
+  const config = {
+    dataUrl: `${buildFolder}/pro-build.data.gz`,
+    frameworkUrl: `${buildFolder}/pro-build.framework.js.gz`,
+    codeUrl: `${buildFolder}/pro-build.wasm.gz`,
+    streamingAssetsUrl: "StreamingAssets",
+    companyName: "DefaultCompany",   // 실제 Unity Player Settings 값과 달라도 로딩엔 문제 없음
+    productName: "HydraulicDigitalTwin",
+    productVersion: "1.0",
+  };
+
+  const script = document.createElement("script");
+  script.src = loaderUrl;
+  script.onload = () => {
+    if (typeof createUnityInstance !== "function"){
+      statusEl.textContent = "Unity 로더 스크립트는 불러왔지만 createUnityInstance를 찾을 수 없음";
+      statusEl.classList.add("error");
+      return;
+    }
+    createUnityInstance(canvas, config, (progress) => {
+      statusEl.textContent = `Unity 로딩 중... ${Math.round(progress * 100)}%`;
+    }).then((instance) => {
+      unityInstance = instance;
+      statusEl.classList.add("hidden");
+    }).catch((err) => {
+      statusEl.textContent = "Unity 인스턴스 생성 실패";
+      statusEl.classList.add("error");
+      console.error("createUnityInstance 실패:", err);
+    });
+  };
+  script.onerror = () => {
+    statusEl.textContent = `Unity 빌드 파일을 못 찾음 (${loaderUrl}). web/${UNITY_BUILD_FOLDER}/ 폴더에 빌드 파일이 있는지 확인하세요.`;
+    statusEl.classList.add("error");
+  };
+  document.body.appendChild(script);
+}
+
+initChart();
+loadUnity();
+poll();
+setInterval(poll, POLL_INTERVAL_MS);
+</script>
+
+</body>
+</html>
