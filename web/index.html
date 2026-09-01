@@ -46,6 +46,7 @@
     display:flex;
     align-items:center;
     justify-content:space-between;
+    gap:24px;
     padding:20px 28px;
     border-bottom:1px solid var(--border-soft);
   }
@@ -60,6 +61,29 @@
     font-family:var(--font-mono);
     font-size:12px;
     color:var(--text-dim);
+  }
+
+  /* ---------- 헤더 가운데 지표 ---------- */
+  .header-metrics{
+    display:flex;
+    gap:32px;
+    align-items:baseline;
+  }
+  .metric{ display:flex; align-items:baseline; gap:8px; }
+  .metric-value{
+    font-family:var(--font-mono);
+    font-size:20px;
+    color:var(--text-primary);
+    line-height:1;
+  }
+  .metric-label{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-dim);
+    white-space:nowrap;
+  }
+  @media (max-width:1100px){
+    .header-metrics{ display:none; }  /* 좁은 화면에선 헤더가 복잡해지니 숨김 */
   }
   .status-cluster{ display:flex; align-items:center; gap:20px; }
   .status-item{
@@ -99,14 +123,6 @@
     margin-bottom:16px;
   }
 
-  /* ---------- 요약 카드 ---------- */
-  .summary-row{ display:flex; gap:24px; margin-top:20px; }
-  .summary-card{
-    font-family:var(--font-mono);
-  }
-  .summary-card .value{ font-size:20px; color:var(--text-primary); }
-  .summary-card .label{ font-size:11px; color:var(--text-dim); margin-top:2px; }
-
   /* ---------- 사이드바: 텔레메트리 ---------- */
   .side-panel{ background:var(--bg-base); border-left:1px solid var(--border-soft); }
   .section{ padding:22px 24px; border-bottom:1px solid var(--border-soft); }
@@ -124,11 +140,22 @@
   }
 
   .telemetry-list{
-    display:flex; flex-direction:column; gap:9px; max-height:280px; overflow-y:auto;
-    scrollbar-width:none;
-    -ms-overflow-style:none;
+    display:flex; flex-direction:column; gap:9px;
+    max-height:280px;
+    overflow-y:auto;
+    /* 스크롤바가 값 텍스트를 가리지 않도록 오른쪽에 여백 확보 */
+    padding-right:10px;
+    scrollbar-width:thin;                        /* Firefox */
+    scrollbar-color:var(--border) transparent;   /* Firefox: 막대 / 트랙 */
   }
-  .telemetry-list::-webkit-scrollbar{ display:none; }
+  /* Chrome/Safari/Edge 스크롤바 */
+  .telemetry-list::-webkit-scrollbar{ width:6px; }
+  .telemetry-list::-webkit-scrollbar-track{ background:transparent; }
+  .telemetry-list::-webkit-scrollbar-thumb{
+    background:var(--border);
+    border-radius:3px;
+  }
+  .telemetry-list::-webkit-scrollbar-thumb:hover{ background:var(--text-dim); }
   .telemetry-row{
     display:flex; justify-content:space-between;
     font-size:12.5px;
@@ -180,11 +207,9 @@
   }
 
   /* ---------- Unity WebGL 패널 ---------- */
-  .unity-panel .panel-title{ margin-bottom:14px; }
   .unity-wrap{
     position:relative;
     width:100%;
-    max-width:960px;
     aspect-ratio:16/9;
     background:#000;
     border-radius:8px;
@@ -215,6 +240,18 @@
     <h1>유압 시스템 모니터링</h1>
     <span id="unit-label">HYDRAULIC UNIT 01</span>
   </div>
+
+  <div class="header-metrics">
+    <div class="metric">
+      <span class="metric-value" id="elapsed-sec">—</span>
+      <span class="metric-label">경과 시간 (sec)</span>
+    </div>
+    <div class="metric">
+      <span class="metric-value" id="poll-count">0</span>
+      <span class="metric-label">수신 횟수</span>
+    </div>
+  </div>
+
   <div class="status-cluster">
     <div class="status-item"><span>사이클 #<span id="cycle-id">—</span></span></div>
     <div class="status-item"><span id="update-age">데이터 대기 중</span></div>
@@ -227,23 +264,17 @@
 
 <main>
   <section class="panel">
-    <div class="panel-title">시스템 상태 요약</div>
-    <div class="summary-row">
-      <div class="summary-card">
-        <div class="value" id="elapsed-sec">—</div>
-        <div class="label">경과 시간 (sec)</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="poll-count">0</div>
-        <div class="label">수신 횟수</div>
-      </div>
+    <div class="panel-title">3D 디지털 트윈 (Unity)</div>
+    <div class="unity-wrap">
+      <canvas id="unity-canvas" width="960" height="540"></canvas>
+      <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
     </div>
   </section>
 
   <aside class="side-panel">
     <div class="section">
       <div class="section-header">
-        <h2>센서 텔레메트리</h2>
+        <h2>실시간 센서 현황</h2>
         <span class="count" id="sensor-count">17 채널</span>
       </div>
       <div class="telemetry-list" id="telemetry-list">
@@ -260,14 +291,6 @@
       </div>
     </div>
   </aside>
-
-  <section class="trend-panel unity-panel">
-    <div class="panel-title">3D 디지털 트윈 (Unity)</div>
-    <div class="unity-wrap">
-      <canvas id="unity-canvas" width="960" height="540"></canvas>
-      <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
-    </div>
-  </section>
 
   <section class="trend-panel">
     <div class="panel-title">냉각 효율 · 펌프 압력 추이</div>
