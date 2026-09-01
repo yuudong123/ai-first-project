@@ -289,6 +289,7 @@ const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지
 const UNITY_BUILD_FOLDER = "Build";
 const UNITY_OBJECT_NAME = "_App";
 const UNITY_METHOD_NAME = "ApplyState";
+const UNITY_CLEAR_METHOD = "ClearState";
 let unityInstance = null;
 
 const SENSOR_ORDER = ["PS1","PS2","PS3","PS4","PS5","PS6","EPS1","FS1","FS2","TS1","TS2","TS3","TS4","VS1","CE","CP","SE"];
@@ -372,6 +373,7 @@ function updateHeader(data){
 
   if (stalled){
     text.textContent = "데이터 지연";
+    if (!unityCleared){ clearUnity(); unityCleared = true; }
   } else {
     const anyDanger = data.prediction && data.prediction.components
       ? Object.values(data.prediction.components).some(c => c.risk_level === "danger")
@@ -455,6 +457,27 @@ function initChart(){
   });
 }
 
+// ---------- Unity로 데이터 전달 (web-unity.md 규격) ----------
+function sendToUnity(payload){
+  if (!unityInstance) return;
+  try {
+    unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_METHOD_NAME, JSON.stringify(payload));
+  } catch (err) {
+    console.error("Unity SendMessage(ApplyState) 실패:", err);
+  }
+}
+
+function clearUnity(){
+  if (!unityInstance) return;
+  try {
+    unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_CLEAR_METHOD);
+  } catch (err) {
+    console.error("Unity SendMessage(ClearState) 실패:", err);
+  }
+}
+
+let unityCleared = false; // 연속으로 여러 번 ClearState를 호출하지 않기 위한 플래그
+
 async function poll(){
   try {
     const res = await fetch(`${API_BASE}/api/v1/state/latest`);
@@ -462,6 +485,7 @@ async function poll(){
       if (res.status === 503){
         document.getElementById("conn-text").textContent = "Raw Consumer 대기 중";
         document.getElementById("conn-dot").classList.remove("live");
+        if (!unityCleared){ clearUnity(); unityCleared = true; }
       }
       return;
     }
@@ -477,13 +501,8 @@ async function poll(){
       updateChart(data);
 
       // 웹 UI와 동일한 JSON을 그대로 Unity에도 전달 (화면 간 값이 달라지지 않도록)
-      if (unityInstance){
-        try {
-          unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_METHOD_NAME, JSON.stringify(data));
-        } catch (err) {
-          console.error("Unity SendMessage 실패:", err);
-        }
-      }
+      sendToUnity(data);
+      unityCleared = false;
     }
 
     renderTelemetry(data.sensors);
@@ -492,6 +511,7 @@ async function poll(){
   } catch (err) {
     document.getElementById("conn-text").textContent = "API 연결 실패";
     document.getElementById("conn-dot").classList.remove("live");
+    if (!unityCleared){ clearUnity(); unityCleared = true; }
     console.error("poll error:", err);
   }
 }
