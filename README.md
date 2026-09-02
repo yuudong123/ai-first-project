@@ -327,20 +327,6 @@ python serve.py
 브라우저에서 `http://localhost:5500/index.html` 접속. (기본 `http.server` 대신
 `serve.py`를 쓰는 이유는 아래 "Unity 빌드 파일" 항목 참고.)
 
-## Unity 빌드 파일 안내 (중요)
-
-`web/Build/` 폴더(Unity WebGL 산출물 — `pro-build.loader.js`, `pro-build.data.gz`,
-`pro-build.framework.js.gz`, `pro-build.wasm.gz`)는 용량이 크고(총 18MB+) 재생성
-가능한 산출물이라 **git에 포함되어 있지 않습니다** (`.gitignore` 처리됨).
-
-이 브랜치를 새로 받은 사람은 웹 대시보드를 열어도 Unity 3D 화면이 안 뜨는 게
-정상입니다. 아래 방법 중 하나로 빌드 파일을 받아서 `web/Build/` 폴더에 넣어야 합니다.
-
-- [ ] TODO: Unity 빌드 파일 공유 링크(구글 드라이브 등)를 여기에 추가
-- 또는 Unity 담당자에게 직접 요청해서 `web/Build/` 폴더 통째로 전달받기
-- 또는 `unity/` 원본 프로젝트를 Unity 에디터로 열어서 WebGL로 직접 빌드
-  (빌드 설정에서 Compression Format을 **Gzip**으로 맞춰야 아래 `serve.py` 설정과 호환됩니다)
-
 Unity 없이 웹 대시보드(센서 텔레메트리, AI 진단, Chart.js 차트)만 확인하고 싶다면
 `web/Build/` 폴더가 없어도 나머지 화면은 정상 작동합니다 — Unity 패널에만
 "Unity 빌드 파일을 못 찾음" 메시지가 뜨고 나머지는 그대로 동작합니다.
