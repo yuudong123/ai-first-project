@@ -344,15 +344,29 @@ const SENSOR_UNITS = {
 const RISK_LABEL = { normal:"정상", caution:"주의", warning:"경고", danger:"위험" };
 const COMPONENT_LABEL = { pump:"펌프", valve:"밸브", cooler:"쿨러", accumulator:"어큐뮬레이터" };
 
+// ---------- 설비 선택 (Unity 3D 화면에서 머신 클릭 시 연동) ----------
+const EQUIPMENT_IDS = ["station-01", "station-02", "station-03"];
+let selectedEquipmentId = "station-01";
+
 let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
 let chart = null;
 let lastEventId = null;
 let lastChangeAt = Date.now();
 
-// 센서별 이력을 모두 쌓아두고, 선택된 센서만 차트에 그린다.
-// (센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록)
-const history = { labels: [], sensors: {} };
-SENSOR_ORDER.forEach(name => { history.sensors[name] = []; });
+// 설비별 × 센서별로 이력을 따로 쌓아둔다.
+// 설비나 센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록 하기 위함.
+const histories = {};
+function makeHistory(){
+  const h = { labels: [], sensors: {} };
+  SENSOR_ORDER.forEach(name => { h.sensors[name] = []; });
+  return h;
+}
+EQUIPMENT_IDS.forEach(id => { histories[id] = makeHistory(); });
+
+function currentHistory(){
+  if (!histories[selectedEquipmentId]) histories[selectedEquipmentId] = makeHistory();
+  return histories[selectedEquipmentId];
+}
 
 let selectedSensor = "CE";  // 기본으로 보여줄 센서
 
@@ -461,10 +475,11 @@ function updateHeader(data){
 }
 
 function updateChart(data){
+  const history = currentHistory();
   history.labels.push(`#${data.event_id}`);
   SENSOR_ORDER.forEach(name => {
     // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
-    history.sensors[name].push(name in data.sensors ? data.sensors[name] : null);
+    history.sensors[name].push(data.sensors && name in data.sensors ? data.sensors[name] : null);
   });
 
   if (history.labels.length > MAX_HISTORY){
@@ -477,6 +492,7 @@ function updateChart(data){
 
 function redrawChart(){
   if (!chart) return;
+  const history = currentHistory();
   const unit = SENSOR_UNITS[selectedSensor] || "";
 
   chart.data.labels = history.labels;
@@ -548,6 +564,53 @@ function clearUnity(){
 }
 
 let unityCleared = false; // 연속으로 여러 번 ClearState를 호출하지 않기 위한 플래그
+let lastPayload = null;   // 설비를 바꿨을 때 즉시 다시 그리기 위해 마지막 응답을 보관
+
+/**
+ * API 응답에서 현재 선택된 설비의 데이터만 골라낸다.
+ * - equipment_states 배열이 오면 selectedEquipmentId와 일치하는 항목을 사용
+ * - 그런 배열이 없으면(현재 상태) 설비 구분 없는 단일 데이터를 그대로 사용
+ *   -> V5가 나중에 설비별 데이터를 보내기 시작해도 코드 수정 없이 동작
+ */
+function pickEquipmentData(payload){
+  if (Array.isArray(payload.equipment_states) && payload.equipment_states.length > 0){
+    const found = payload.equipment_states.find(s => s.equipment_id === selectedEquipmentId);
+    const target = found || payload.equipment_states[0];
+    return {
+      ...target,
+      event_id: payload.event_id,
+      elapsed_sec: payload.elapsed_sec,
+      generated_at: target.generated_at || payload.generated_at,
+      _isFallback: !found,  // 선택한 설비를 못 찾아 첫 번째로 대체한 경우
+    };
+  }
+  // 설비 구분이 아직 없는 단계: 하나의 데이터를 모든 설비가 공유
+  return { ...payload, _isShared: true };
+}
+
+function renderSelectedEquipment(){
+  const labelEl = document.getElementById("unit-label");
+  if (labelEl) labelEl.textContent = selectedEquipmentId.toUpperCase();
+
+  // 설비를 바꾸면 그 설비의 이력으로 차트를 다시 그린다
+  redrawChart();
+
+  // 마지막으로 받은 데이터가 있으면 즉시 화면 갱신 (다음 폴링까지 기다리지 않도록)
+  if (lastPayload){
+    const view = pickEquipmentData(lastPayload);
+    renderTelemetry(view.sensors);
+    renderDiagnosis(view.prediction);
+  }
+}
+
+// Unity 3D 화면에서 머신을 클릭하면 이 이벤트가 날아온다
+window.addEventListener("hydrotwin-equipment-selected", (event) => {
+  const id = event.detail && event.detail.equipmentId;
+  if (!id || id === selectedEquipmentId) return;
+  selectedEquipmentId = id;
+  console.log("선택된 설비:", selectedEquipmentId);
+  renderSelectedEquipment();
+});
 
 async function poll(){
   try {
@@ -560,19 +623,21 @@ async function poll(){
       }
       return;
     }
-    const data = await res.json();
+    const payload = await res.json();
+    lastPayload = payload;
+    const data = pickEquipmentData(payload);
 
     // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
-    const isNewEvent = data.event_id !== lastEventId;
+    const isNewEvent = payload.event_id !== lastEventId;
     if (isNewEvent){
-      lastEventId = data.event_id;
+      lastEventId = payload.event_id;
       lastChangeAt = Date.now();
       receivedCount += 1;
       document.getElementById("poll-count").textContent = receivedCount;
       updateChart(data);
 
-      // 웹 UI와 동일한 JSON을 그대로 Unity에도 전달 (화면 간 값이 달라지지 않도록)
-      sendToUnity(data);
+      // Unity에는 원본 응답을 그대로 전달 (설비 3대를 Unity가 각각 처리하도록)
+      sendToUnity(payload);
       unityCleared = false;
     }
 
@@ -630,6 +695,7 @@ function loadUnity(){
 }
 
 initChart();
+document.getElementById("unit-label").textContent = selectedEquipmentId.toUpperCase();
 loadUnity();
 poll();
 setInterval(poll, POLL_INTERVAL_MS);
