@@ -140,7 +140,7 @@
   }
 
   .telemetry-list{
-    display:flex; flex-direction:column; gap:9px;
+    display:flex; flex-direction:column; gap:4px;
     max-height:280px;
     overflow-y:auto;
     /* 스크롤바가 값 텍스트를 가리지 않도록 오른쪽에 여백 확보 */
@@ -156,11 +156,29 @@
     border-radius:3px;
   }
   .telemetry-list::-webkit-scrollbar-thumb:hover{ background:var(--text-dim); }
+
+  /* 센서 행: 클릭하면 해당 센서 그래프로 전환 */
   .telemetry-row{
-    display:flex; justify-content:space-between;
+    display:flex; justify-content:space-between; align-items:center;
     font-size:12.5px;
+    padding:5px 8px;
+    border-radius:5px;
+    cursor:pointer;
+    border-left:2px solid transparent;
+    transition:background .15s, border-color .15s;
   }
-  .telemetry-row .name{ color:var(--text-secondary); }
+  .telemetry-row:hover{ background:var(--bg-panel); }
+  .telemetry-row:focus-visible{
+    outline:none;
+    background:var(--bg-panel);
+    border-left-color:var(--text-dim);
+  }
+  .telemetry-row.selected{
+    background:var(--accent-dim);
+    border-left-color:var(--accent);
+  }
+  .telemetry-row.selected .name{ color:var(--accent); }
+  .telemetry-row .name{ color:var(--text-secondary); transition:color .15s; }
   .telemetry-row .val{ font-family:var(--font-mono); color:var(--text-primary); }
 
   .diag-list{ display:flex; flex-direction:column; gap:10px; }
@@ -293,7 +311,7 @@
   </aside>
 
   <section class="trend-panel">
-    <div class="panel-title">냉각 효율 · 펌프 압력 추이</div>
+    <div class="panel-title" id="chart-title">CE 추이 (%)</div>
     <div class="chart-wrap">
       <canvas id="trend-chart"></canvas>
     </div>
@@ -330,7 +348,13 @@ let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운�
 let chart = null;
 let lastEventId = null;
 let lastChangeAt = Date.now();
-const history = { labels: [], ce: [], ps2: [] };
+
+// 센서별 이력을 모두 쌓아두고, 선택된 센서만 차트에 그린다.
+// (센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록)
+const history = { labels: [], sensors: {} };
+SENSOR_ORDER.forEach(name => { history.sensors[name] = []; });
+
+let selectedSensor = "CE";  // 기본으로 보여줄 센서
 
 function fmtNum(n, digits=1){
   return Number(n).toLocaleString("ko-KR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -342,13 +366,36 @@ function renderTelemetry(sensors){
   SENSOR_ORDER.forEach(name => {
     if (!(name in sensors)) return;
     const row = document.createElement("div");
-    row.className = "telemetry-row";
+    row.className = "telemetry-row" + (name === selectedSensor ? " selected" : "");
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.title = `${name} 추이를 그래프로 보기`;
     row.innerHTML = `
       <span class="name">${name}</span>
       <span class="val">${fmtNum(sensors[name])} ${SENSOR_UNITS[name] || ""}</span>
     `;
+    row.addEventListener("click", () => selectSensor(name));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " "){
+        e.preventDefault();
+        selectSensor(name);
+      }
+    });
     list.appendChild(row);
   });
+}
+
+function selectSensor(name){
+  if (selectedSensor === name) return;
+  selectedSensor = name;
+
+  // 목록 전체를 다시 그리지 않고 선택 표시만 교체
+  document.querySelectorAll("#telemetry-list .telemetry-row").forEach(row => {
+    const rowName = row.querySelector(".name") ? row.querySelector(".name").textContent : null;
+    row.classList.toggle("selected", rowName === name);
+  });
+
+  redrawChart();
 }
 
 function renderDiagnosis(prediction){
@@ -414,21 +461,33 @@ function updateHeader(data){
 }
 
 function updateChart(data){
-  const label = `#${data.event_id}`;
-  history.labels.push(label);
-  history.ce.push(data.sensors.CE);
-  history.ps2.push(data.sensors.PS2);
+  history.labels.push(`#${data.event_id}`);
+  SENSOR_ORDER.forEach(name => {
+    // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
+    history.sensors[name].push(name in data.sensors ? data.sensors[name] : null);
+  });
 
   if (history.labels.length > MAX_HISTORY){
     history.labels.shift();
-    history.ce.shift();
-    history.ps2.shift();
+    SENSOR_ORDER.forEach(name => history.sensors[name].shift());
   }
 
+  redrawChart();
+}
+
+function redrawChart(){
+  if (!chart) return;
+  const unit = SENSOR_UNITS[selectedSensor] || "";
+
   chart.data.labels = history.labels;
-  chart.data.datasets[0].data = history.ce;
-  chart.data.datasets[1].data = history.ps2;
+  chart.data.datasets[0].label = unit ? `${selectedSensor} (${unit})` : selectedSensor;
+  chart.data.datasets[0].data = history.sensors[selectedSensor] || [];
   chart.update("none");
+
+  const titleEl = document.getElementById("chart-title");
+  if (titleEl){
+    titleEl.textContent = unit ? `${selectedSensor} 추이 (${unit})` : `${selectedSensor} 추이`;
+  }
 }
 
 function initChart(){
@@ -439,26 +498,15 @@ function initChart(){
       labels: [],
       datasets: [
         {
-          label: "냉각 효율 CE (%)",
+          label: selectedSensor,
           data: [],
           borderColor: "#2fe0c4",
           backgroundColor: "rgba(47,224,196,0.08)",
           borderWidth: 2,
           pointRadius: 0,
           tension: 0.3,
-          yAxisID: "y",
           fill: true,
-        },
-        {
-          label: "펌프 압력 PS2 (bar)",
-          data: [],
-          borderColor: "#7c8e9c",
-          borderWidth: 1.5,
-          pointRadius: 0,
-          borderDash: [3,3],
-          tension: 0.3,
-          yAxisID: "y1",
-          fill: false,
+          spanGaps: true,  // 값이 빠진 구간(null)이 있어도 선을 이어서 그림
         },
       ],
     },
@@ -473,11 +521,11 @@ function initChart(){
       },
       scales: {
         x: { ticks: { color: "#4d5c68", font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: "#1a2530" } },
-        y: { position: "left", ticks: { color: "#4d5c68", font: { size: 10 } }, grid: { color: "#1a2530" } },
-        y1: { position: "right", ticks: { color: "#4d5c68", font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: "#4d5c68", font: { size: 10 } }, grid: { color: "#1a2530" } },
       },
     },
   });
+  redrawChart();
 }
 
 // ---------- Unity로 데이터 전달 (web-unity.md 규격) ----------
