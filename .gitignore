@@ -23,10 +23,13 @@ __pycache__/
 .vscode/
 .DS_Store
 Thumbs.db
+*.bak
 
 # kafka 부분
 kafka/latest_data.json
 kafka/latest_raw.json
 kafka/latest_raw.json.tmp
+kafka/latest_raw_by_equipment.json
+kafka/latest_state_by_equipment.json
 kafka/logs/
 kafka/run/
