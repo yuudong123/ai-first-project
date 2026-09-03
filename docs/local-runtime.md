@@ -1,6 +1,52 @@
-# 한 대의 PC에서 전체 시스템 실행
+# Docker 실행 및 로컬 전체 시연
 
-공용 개발서버에서는 이 문서의 로컬 전환 스크립트를 실행하지 않습니다. 기존 Kafka·생성기를 유지하는 독립 배포는 [서버 배포 가이드](server-deployment.md)와 `compose.server.yml`을 사용하세요.
+## 기본 실행: 기존 Kafka의 3대 수신·추론·웹
+
+기존 **`docker-compose.yml`과 `Dockerfile`만 사용**합니다. 별도 서버 Compose나 덮어쓰기 파일을 선택하지 않습니다.
+기본 `docker compose up`은 inference와 api만 실행합니다. Kafka·생성기·모니터·Jenkins는 로컬 시연용 `local` 프로필에 남겨 두었습니다.
+기존 동일 이름의 추론·API 컨테이너는 배포 시 교체됩니다. 공용 서버에서는 로컬 전환 스크립트 또는 `--remove-orphans`, `down -v`를 실행하지 않습니다.
+
+서버의 기존 `.env`에 아래 값만 추가·수정합니다. 파일이 없다면 생성합니다. 기존 비밀번호나 다른 설정을 덮어쓰지 않습니다.
+
+```dotenv
+KAFKA_BROKER=192.168.133.108:9092
+KAFKA_TOPIC=hydraulic.sensor.multi.raw
+UNITY_WEBGL_HOST_PATH=/srv/hydrotwin/assets/unity/pro-build
+WEB_BIND_ADDRESS=127.0.0.1
+WEB_PORT=8000
+```
+
+- 팀 내부망에서 직접 접속하려면 `WEB_BIND_ADDRESS`를 서버 내부망 IP로 설정하고 방화벽에서 팀 접속만 허용합니다. 인터넷 공개에는 인증·TLS가 별도로 필요합니다.
+- `UNITY_WEBGL_HOST_PATH`는 실제 Build 폴더의 부모 경로입니다. 이 PC는 `D:/ai-first-project/artifacts/unity/ai-labels/pro-build`입니다.
+- 모델·데이터는 기본적으로 저장소의 `models`, `data`를 사용합니다. 다른 위치면 `MODEL_HOST_DIR`, `DATA_HOST_DIR`을 설정합니다.
+- 상태 파일은 기본 `artifacts/runtime`에 저장합니다. 별도 위치는 `STATE_HOST_DIR`로 지정하며, 로컬 전체 시연에서는 기본 위치를 사용합니다.
+- Kafka의 advertised.listeners 주소도 컨테이너에서 접근 가능해야 합니다. 컨테이너 localhost는 서버 호스트가 아닙니다. 생성기와 서버 시간을 동기화합니다.
+- 기본 모델은 `models/predict/integrated_lgbm.joblib`: 센서별 10초 평균 17개, 부품 4개와 stable_flag를 예측합니다. 신뢰하는 팀 모델만 사용합니다.
+- 정상 밴드에 필요한 데이터는 `data/processed/simulator/uci_1hz_17sensors.npz`, `data/processed/split_ids_accumulator_stratified.json`, `data/raw/uci_hydraulic/extracted/profile.txt`입니다.
+- Unity 빌드는 `Build/pro-build.loader.js`, `pro-build.data.gz`, `pro-build.framework.js.gz`, `pro-build.wasm.gz`를 포함해야 합니다. StreamingAssets가 있으면 함께 복사합니다.
+- 모델·데이터·빌드는 Git에 없으므로 서버에 별도로 준비해야 합니다. 시작 시 모델 호환성·기준 데이터·Unity 파일 누락을 검사합니다.
+
+```sh
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail 100 inference api
+```
+
+10초 이상 연속 수신한 다음 확인합니다.
+
+```sh
+docker compose exec inference python -m src.runtime.check
+```
+
+`/api/v1/state/latest`의 equipment_states에 3개 설비와 각각 ready 예측이 있어야 합니다. 웹에서 각 설비를 선택해 확인합니다.
+`/health`는 웹 생존 검사이므로 Kafka 연결 및 세 설비의 준비 상태는 위 연결 검사로 별도 확인합니다.
+모델·데이터·Unity는 읽기 전용으로 연결하고 코드 자체는 이미지에 포함하므로, 코드 변경 후 다시 빌드해야 합니다.
+이 모드는 멀티 설비 자동 재학습에 연결하지 않았으며 모델 교체 후에는 inference를 재시작해야 합니다.
+기존 루트 Jenkinsfile은 로컬 monitor 서비스에 의존하므로 멀티 설비 재학습용으로 사용하지 않습니다.
+
+기본 실행 서비스를 중지하려면 `docker compose stop inference api`를 사용합니다. 기존 Kafka·생성기를 건드리지 않습니다.
+복구하려면 이전 코드와 모델·자산을 복원해 다시 빌드합니다. 배포 전 기존 코드·모델을 보존하고, 저장된 과거 상태를 현재 정상 수신으로 오해하지 않도록 지연 표시를 확인합니다.
 
 ## 원격 Kafka의 3개 설비를 따로 표시하기
 
@@ -15,14 +61,13 @@
 - 원격 producer에는 구간 전환 ID나 정답 라벨이 없다. 센서값만으로 전환 경계를 확정할 수 없으며, 원격 스트림 예측의 정답 성능은 이 연결 검사로 검증되지 않는다.
 - 기존 `kafka/consumer_v5.py`를 따로 실행할 필요가 없다. 원격 모드의 실제 컨슈머는 `src/runtime/multi_inference.py`이다. 원격 토픽에 쓰거나 다른 컨슈머의 오프셋을 커밋하지 않는다.
 
-로컬 전체 모드로 복귀하려면 다음을 실행한다. `infra/compose.remote.yml`을 빼고 컨테이너를 다시 만들므로 API도 원래 파일로 복귀한다.
+로컬 전체 모드로 복귀하려면 다음 스크립트를 실행한다. 같은 Compose에서 로컬 프로필과 기존 단일 설비 추론·재학습 흐름을 선택한다.
 
 ```powershell
-docker compose up -d --force-recreate inference api
-docker compose up -d monitor producer
+powershell -ExecutionPolicy Bypass -File infra/start.ps1 -SkipBuild
 ```
 
-단순 `docker compose restart`는 원격 설정을 제거하지 않는다. 원격 모드를 다시 구성할 때는 반드시 `infra/start-remote.ps1`을 사용한다.
+단순 `docker compose restart`는 실행 모드를 바꾸지 않는다. 로컬 전체 시연에서 원격 모드로 전환할 때는 새 PowerShell 프로세스로 `infra/start-remote.ps1`을 실행한다. 공용 서버에서는 위 기본 배포 명령만 사용한다.
 
 검증: Python 회귀 테스트 44개와 JavaScript 테스트 6개 통과. 원격 Kafka 원본과 API를 동일 시각으로 대조해 3대 모두 센서 17개의 값이 일치함을 확인했다. 예를 들어 2026-09-03 09:22:45 UTC의 PS1은 station-01=160.381617, station-02=159.715684, station-03=159.309819 bar였다. 모든 설비의 10초 예측·영향 센서 응답을 확인했고, Unity에서 station-03 선택 후 해당 설비의 이름표·웹 센서값 및 AI 진단 표시를 확인했다. Unity 소스·빌드는 변경하지 않았다.
 
@@ -41,7 +86,7 @@ cd C:\ai-first-project
 - API 문서: http://localhost:8000/docs
 - Jenkins: http://localhost:8080 (계정·비밀번호는 Git에서 제외된 `.env` 참고)
 - 중지: `docker compose stop`
-- 다시 실행: `docker compose up -d`
+- 로컬 전체 모드 다시 실행: `powershell -ExecutionPolicy Bypass -File infra/start.ps1 -SkipBuild` (기본 `docker compose up -d`는 원격 3대 모드)
 - 로그: `docker compose logs -f --tail 50 producer inference monitor`
 - 연결 검사: `docker exec hydrotwin-monitor python -m src.runtime.check`
 - 테스트: `docker exec hydrotwin-monitor python -m pytest tests -q`

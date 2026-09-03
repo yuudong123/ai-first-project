@@ -1,7 +1,7 @@
 name: hydrotwin
 
 x-app: &app
-  image: hydrotwin-app:local
+  image: hydrotwin-app:${HYDROTWIN_IMAGE_TAG:-local}
   build: .
   working_dir: /app
   volumes:
@@ -13,6 +13,7 @@ x-app: &app
 
 services:
   kafka:
+    profiles: [local]
     image: apache/kafka:4.0.1
     container_name: hydrotwin-kafka
     restart: unless-stopped
@@ -48,6 +49,7 @@ services:
 
   producer:
     <<: *app
+    profiles: [local]
     container_name: hydrotwin-producer
     command: [python, -m, src.runtime.producer]
     env_file: .env
@@ -59,14 +61,23 @@ services:
   inference:
     <<: *app
     container_name: hydrotwin-inference
-    command: [python, -m, src.runtime.inference]
-    environment: {KAFKA_BROKER: "kafka:9092"}
+    command: [python, -m, src.runtime.server_entry, inference]
+    environment:
+      KAFKA_BROKER: ${KAFKA_BROKER:-192.168.133.108:9092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-hydraulic.sensor.multi.raw}
+      HYDROTWIN_INFERENCE_MODULE: ${HYDROTWIN_INFERENCE_MODULE:-src.runtime.multi_inference}
+    volumes:
+      - type: bind
+        source: ${MODEL_HOST_DIR:-./models}
+        target: /app/models
+        read_only: true
+        bind: {create_host_path: false}
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime
     mem_limit: 1g
-    depends_on:
-      kafka: {condition: service_healthy}
 
   monitor:
     <<: *app
+    profiles: [local]
     container_name: hydrotwin-monitor
     command: [python, -m, src.runtime.monitor]
     env_file: .env
@@ -78,15 +89,24 @@ services:
   api:
     <<: *app
     container_name: hydrotwin-api
-    command: [uvicorn, api.main:app, --host, 0.0.0.0, --port, "8000"]
-    environment: {HYDROTWIN_RUNTIME: "1", UNITY_WEBGL_PATH: "/unity-build"}
+    command: [python, -m, src.runtime.server_entry, api]
+    environment:
+      HYDROTWIN_RUNTIME: "1"
+      HYDROTWIN_REMOTE: ${HYDROTWIN_REMOTE:-1}
+      UNITY_WEBGL_PATH: /unity-build
     volumes:
-      - .:/app
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime:ro
       - type: bind
-        source: ${UNITY_WEBGL_HOST_PATH:-D:/ai-first-project/artifacts/unity/ai-labels/pro-build}
+        source: ${DATA_HOST_DIR:-./data}
+        target: /app/data
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${UNITY_WEBGL_HOST_PATH:-./web}
         target: /unity-build
         read_only: true
-    ports: ["127.0.0.1:8000:8000"]
+        bind: {create_host_path: false}
+    ports: ["${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8000}:8000"]
     mem_limit: 512m
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -95,6 +115,7 @@ services:
       retries: 3
 
   jenkins:
+    profiles: [local]
     image: hydrotwin-jenkins:local
     build: infra/jenkins
     container_name: hydrotwin-jenkins

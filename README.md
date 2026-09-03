@@ -2,10 +2,10 @@
 
 ## 현재 실행 방법 (2026-09-03)
 
-**개발서버 배포:** [서버 Docker 배포 가이드](docs/server-deployment.md)의 `compose.server.yml`을 단독 사용합니다. 기존 Kafka·생성기를 유지하며 3대 수신·추론·웹만 실행합니다. 모델·Unity·밴드 기준 데이터는 별도 준비가 필요합니다.
+**기본 실행:** 기존 `docker-compose.yml`과 `Dockerfile`을 사용해 `docker compose up -d --build`로 실행합니다. 기본은 기존 Kafka에서 3대 수신·추론·웹만 실행하며, 서버 경로·포트는 `.env`에 설정합니다. [배포 설정 및 실행 가이드](docs/local-runtime.md)를 참고하세요.
 
 현재 통합 실행 기준은 [한 대의 PC 실행 가이드](docs/local-runtime.md)입니다.
-원격 3대 수신은 `infra/start-remote.ps1`을 사용합니다. `192.168.133.108:9092`의 `hydraulic.sensor.multi.raw`를 설비별로 분리해 추론하며, 이 모드에서는 로컬 생성기·드리프트 감지를 중지합니다. 로컬 복귀 절차는 실행 가이드에 있습니다.
+기본 토픽은 `192.168.133.108:9092`의 `hydraulic.sensor.multi.raw`이며 설비별로 분리해 추론합니다. 로컬 전체 시연에서 전환할 때만 `infra/start-remote.ps1`을 사용하며, 이 스크립트는 로컬 생성기·드리프트 감지를 중지하므로 공용 서버에서 사용하지 않습니다.
 `infra/start.ps1`로 Docker·Kafka·Jenkins·V5 생성·10초 추론·드리프트 재학습·웹을 실행합니다.
 웹은 `http://localhost:8000`, Jenkins는 `http://localhost:8080`입니다.
 아래의 이전 실행 예시 중 `model.pkl`, `/data`, 20초 버퍼 설명은 과거 단계 기록입니다.

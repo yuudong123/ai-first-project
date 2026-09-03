@@ -50,3 +50,14 @@ def test_api_does_not_hide_missing_reference_data(monkeypatch):
     monkeypatch.setattr(sensor_bands,'load_sensor_bands',missing)
     with pytest.raises(FileNotFoundError,match='기준 데이터'):
         server_entry.validate_api()
+
+
+@pytest.mark.parametrize('module',['src.runtime.multi_inference','src.runtime.inference'])
+def test_same_entry_supports_remote_and_local_inference(monkeypatch,module):
+    calls=[]
+    monkeypatch.setattr(server_entry,'validate_inference',lambda:None)
+    monkeypatch.setenv('HYDROTWIN_INFERENCE_MODULE',module)
+    monkeypatch.setattr(server_entry.sys,'argv',['entry','inference'])
+    monkeypatch.setattr(server_entry.os,'execvp',lambda executable,args:calls.append(args))
+    server_entry.main()
+    assert calls[0][-1]==module
