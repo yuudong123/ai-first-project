@@ -2,8 +2,12 @@ pandas
 numpy
 matplotlib
 scikit-learn
+lightgbm
+pyarrow
+shap
 joblib
 tensorflow
 kafka-python
 fastapi
 uvicorn[standard]
+pytest

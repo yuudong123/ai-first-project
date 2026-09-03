@@ -21,4 +21,5 @@
 - Poll interval: one second.
 - The current sensor panel must include all 17 IDs without omission: `PS1`, `PS2`, `PS3`, `PS4`, `PS5`, `PS6`, `EPS1`, `FS1`, `FS2`, `TS1`, `TS2`, `TS3`, `TS4`, `VS1`, `CE`, `CP`, `SE`.
 - AI component results cover `pump`, `valve`, `cooler`, and `accumulator`.
-- Before the 20-second inference window is ready, keep sensor values updating and show prediction status as warming up.
+- 학습·재학습·실시간 추론은 센서별 10초 평균 17개로 통일한다. 10초가 모이기 전에는 센서값은 계속 갱신하고 예측 상태를 warming_up으로 표시한다.
+- 통합 모델 학습·평가는 사이클별 모든 10초 위치(1초 간격 51개)를 사용한다. 사이클 단위 분할을 유지하고 구간을 무작위 분할하지 않는다. stable_flag는 사이클 라벨이며 생성 초기 라벨을 생성값의 실제 정답으로 간주하지 않는다.

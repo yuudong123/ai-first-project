@@ -1074,6 +1074,18 @@ def load_feature_file(
     return features
 
 
+def load_window_features(seconds: int, processed_dir=None) -> pd.DataFrame:
+    """10초 모델은 사이클 내부의 모든 위치(1초 간격, 51개)를 사용한다."""
+    if seconds != 10:
+        return load_feature_file(seconds, processed_dir)
+    from src.features.rolling import build_rolling_features
+    root = Path(processed_dir) if processed_dir is not None else PROCESSED_DIR
+    with np.load(root / "simulator" / "uci_1hz_17sensors.npz", allow_pickle=False) as source:
+        if list(source["sensor_names"]) != list(SENSOR_NAMES):
+            raise ValueError("시계열 센서 순서가 모델 입력 계약과 다릅니다.")
+        return build_rolling_features(source["data"], MEAN_FEATURE_COLUMNS)
+
+
 def get_xy(
     features: pd.DataFrame,
     profile: pd.DataFrame,
@@ -1120,13 +1132,16 @@ def get_xy(
         .copy()
     )
 
+    rolling = "window_start_sec" in features.columns
+    if rolling and features.duplicated(["cycle_id", "window_start_sec"]).any():
+        raise ValueError("같은 사이클의 동일한 10초 구간이 중복되었습니다.")
     merged = (
         feature_part
         .merge(
             label_part,
             on="cycle_id",
             how="inner",
-            validate="one_to_one",
+            validate="many_to_one" if rolling else "one_to_one",
         )
         .sort_values(
             "cycle_id"
@@ -1136,7 +1151,7 @@ def get_xy(
         )
     )
 
-    if len(merged) != len(id_set):
+    if merged["cycle_id"].nunique() != len(id_set) or (not rolling and len(merged) != len(id_set)):
         raise ValueError(
             f"{target}: 특징/라벨 cycle_id 정렬 실패 "
             f"예상={len(id_set)}, 실제={len(merged)}"
@@ -1151,6 +1166,32 @@ def get_xy(
     ].copy()
 
     return X, y
+
+
+def apply_sensor_offsets(
+    features: pd.DataFrame,
+    sensor_offsets: Mapping[str, float],
+) -> pd.DataFrame:
+    """센서 원 단위의 offset을 해당 평균 특징에 적용한다.
+
+    모든 1초 값에 일정한 offset을 더하면 10/20/30/60초 평균에도 같은
+    offset이 더해진다. 새로운 고장 라벨을 만들지 않고 계절에 따른 운영환경
+    변화를 재현하기 위해 사용한다.
+    """
+    unknown = set(sensor_offsets) - set(SENSOR_NAMES)
+    if unknown:
+        raise ValueError(f"알 수 없는 센서 offset: {sorted(unknown)}")
+
+    shifted = features.copy()
+    for sensor, raw_offset in sensor_offsets.items():
+        offset = float(raw_offset)
+        if not np.isfinite(offset):
+            raise ValueError(f"{sensor} offset은 유한한 숫자여야 합니다.")
+        column = f"{sensor}_mean"
+        if column not in shifted.columns:
+            raise ValueError(f"특징 컬럼이 없습니다: {column}")
+        shifted[column] = shifted[column].astype(float) + offset
+    return shifted
 
 
 # ============================================================
@@ -1192,13 +1233,13 @@ def compare_models(
                 RandomForestClassifier(
                     n_estimators=200,
                     random_state=RANDOM_STATE,
-                    n_jobs=-1,
+                    n_jobs=2,
                 ),
             "LightGBM":
                 LGBMClassifier(
                     n_estimators=200,
                     random_state=RANDOM_STATE,
-                    n_jobs=-1,
+                    n_jobs=2,
                     verbosity=-1,
                 ),
         }
@@ -1276,7 +1317,7 @@ def evaluate_lgbm_window(
         model = LGBMClassifier(
             n_estimators=200,
             random_state=RANDOM_STATE,
-            n_jobs=-1,
+            n_jobs=2,
             verbosity=-1,
         )
 
@@ -1322,84 +1363,12 @@ def select_final_window(
     splits: Mapping[str, Iterable[int]],
     processed_dir: Path | str | None = None,
 ) -> tuple[int, pd.DataFrame]:
-    """
-    최신 노트북 기준 선택 규칙:
-    - 20초와 60초 LightGBM Validation Macro F1 비교
-    - 20초가 60초 성능의 95% 이상이면 20초
-    - 아니면 60초
-    """
-    rows = []
-
-    for seconds in [
-        20,
-        60,
-    ]:
-        features = load_feature_file(
-            seconds,
-            processed_dir,
-        )
-
-        result = evaluate_lgbm_window(
-            features,
-            profile,
-            splits["train_ids"],
-            splits["val_ids"],
-            seconds,
-        )
-
-        rows.append(
-            result
-        )
-
-    window_results = pd.concat(
-        rows,
-        ignore_index=True,
+    """현재 계약은 10초로 고정하며, 해당 구간의 검증 성능만 반환한다."""
+    features = load_window_features(10, processed_dir)
+    results = evaluate_lgbm_window(
+        features, profile, splits["train_ids"], splits["val_ids"], 10,
     )
-
-    summary = (
-        window_results
-        .groupby(
-            "window_sec"
-        )[
-            [
-                "accuracy",
-                "macro_f1",
-            ]
-        ]
-        .mean()
-    )
-
-    f1_20 = float(
-        summary.loc[
-            20,
-            "macro_f1",
-        ]
-    )
-
-    f1_60 = float(
-        summary.loc[
-            60,
-            "macro_f1",
-        ]
-    )
-
-    performance_ratio = (
-        f1_20
-        / f1_60
-        if f1_60 > 0
-        else 0.0
-    )
-
-    final_window_sec = (
-        20
-        if performance_ratio >= 0.95
-        else 60
-    )
-
-    return (
-        final_window_sec,
-        window_results,
-    )
+    return 10, results
 
 
 # ============================================================
@@ -1411,7 +1380,8 @@ def train_integrated_lgbm(
     splits: Mapping[str, Iterable[int]] | None = None,
     processed_dir: Path | str | None = None,
     model_path: Path | str | None = None,
-    final_window_sec: int | None = None,
+    final_window_sec: int | None = 10,
+    training_sensor_offsets: Mapping[str, float] | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
     """
     5개 LightGBM 분류기를 학습한 뒤
@@ -1434,13 +1404,8 @@ def train_integrated_lgbm(
     )
 
     if final_window_sec is None:
-        final_window_sec, window_results = (
-            select_final_window(
-                profile,
-                splits,
-                processed_dir,
-            )
-        )
+        final_window_sec = 10
+        window_results = pd.DataFrame()
     else:
         if final_window_sec not in WINDOW_SECONDS:
             raise ValueError(
@@ -1449,10 +1414,8 @@ def train_integrated_lgbm(
 
         window_results = pd.DataFrame()
 
-    features = load_feature_file(
-        final_window_sec,
-        processed_dir,
-    )
+    validate_splits(profile, splits)
+    features = load_window_features(final_window_sec, processed_dir)
 
     train_val_ids = sorted(
         set(
@@ -1491,6 +1454,20 @@ def train_integrated_lgbm(
             target,
         )
 
+        if training_sensor_offsets:
+            shifted_train_val = apply_sensor_offsets(
+                X_train_val,
+                training_sensor_offsets,
+            )
+            X_train_val = pd.concat(
+                [X_train_val, shifted_train_val],
+                ignore_index=True,
+            )
+            y_train_val = pd.concat(
+                [y_train_val, y_train_val],
+                ignore_index=True,
+            )
+
         X_test, y_test = get_xy(
             features,
             profile,
@@ -1501,7 +1478,7 @@ def train_integrated_lgbm(
         model = LGBMClassifier(
             n_estimators=200,
             random_state=RANDOM_STATE,
-            n_jobs=-1,
+            n_jobs=2,
             verbosity=-1,
         )
 
@@ -1635,6 +1612,13 @@ def train_integrated_lgbm(
         },
         # metadata.json을 따로 만들지 않고 모델 파일 안에 포함한다.
         "metadata": {
+            "window_sampling": {
+                "policy": "all_within_cycle" if final_window_sec == 10 else "first_window",
+                "windows_per_cycle": 51 if final_window_sec == 10 else 1,
+                "step_sec": 1,
+                "label_scope": "cycle",
+                "test_cycle_count": len(splits["test_ids"]),
+            },
             "feature_count":
                 len(
                     MEAN_FEATURE_COLUMNS
@@ -1662,6 +1646,15 @@ def train_integrated_lgbm(
                     if not window_results.empty
                     else []
                 ),
+            "seasonal_augmentation": {
+                "enabled": bool(training_sensor_offsets),
+                "sensor_offsets": {
+                    sensor: float(offset)
+                    for sensor, offset in (training_sensor_offsets or {}).items()
+                },
+                "policy": "original_plus_offset_copy",
+                "label_source": "verified_historical_profile",
+            },
         },
     }
 
@@ -1734,6 +1727,7 @@ def evaluate_bundle(
     profile: pd.DataFrame | None = None,
     splits: Mapping[str, Iterable[int]] | None = None,
     processed_dir: Path | str | None = None,
+    sensor_offsets: Mapping[str, float] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     bundle = (
         dict(bundle)
@@ -1759,10 +1753,7 @@ def evaluate_bundle(
         bundle["window_sec"]
     )
 
-    features = load_feature_file(
-        seconds,
-        processed_dir,
-    )
+    features = load_window_features(seconds, processed_dir)
 
     rows = []
     matrices: dict[
@@ -1793,6 +1784,12 @@ def evaluate_bundle(
             splits["test_ids"],
             target,
         )
+
+        if sensor_offsets:
+            X_test = apply_sensor_offsets(
+                X_test,
+                sensor_offsets,
+            )
 
         pred = bundle[
             "models"
@@ -2358,21 +2355,21 @@ def main_train() -> None:
         profile
     )
 
-    # 기존 흐름 보존: 20초에서 RF / LightGBM 비교
-    features_20 = load_feature_file(
-        20
+    # 사이클을 분리한 전체 위치의 10초 평균 특징으로 비교한다.
+    features_10 = load_window_features(
+        10
     )
 
     comparison = compare_models(
-        features_20,
+        features_10,
         profile,
         splits["train_ids"],
         splits["val_ids"],
-        window_sec=20,
+        window_sec=10,
     )
 
     print(
-        "\n=== 20초 RandomForest / LightGBM Validation 비교 ==="
+        "\n=== 10초 RandomForest / LightGBM Validation 비교 ==="
     )
 
     print(

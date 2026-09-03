@@ -5,3 +5,12 @@ __pycache__
 *.pyc
 .pytest_cache
 .env
+.env.*
+data
+models
+artifacts
+unity
+unity-fbx
+web/Build
+notebooks
+mlruns

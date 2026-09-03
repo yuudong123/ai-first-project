@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="chart.umd.js"></script>
+<script src="sensor-bands.js?v=20260903-1"></script>
 <style>
   :root{
     --bg-base:#0a0f14;
@@ -215,6 +216,9 @@
     border-top:1px solid var(--border-soft);
   }
   .chart-wrap{ height:220px; }
+  .band-info{ font-size:12px; color:var(--text-secondary); margin:8px 0; line-height:1.6; }
+  .band-info.warning, .telemetry-row.band-warning .val{ color:#ffab55; }
+  .band-note{ font-size:11px; color:var(--text-dim); line-height:1.6; margin-top:8px; }
 
   .empty-state{
     font-family:var(--font-mono);
@@ -312,14 +316,16 @@
 
   <section class="trend-panel">
     <div class="panel-title" id="chart-title">CE 추이 (%)</div>
+    <div class="band-info" id="band-info" role="status">정상 운전 기준 범위 불러오는 중</div>
     <div class="chart-wrap">
       <canvas id="trend-chart"></canvas>
     </div>
+    <div class="band-note" id="band-note">음영: 정상 운전 기준 범위 · 주황색: 범위 이탈 · AI 고장 판단과 별도</div>
   </section>
 </main>
 
 <script>
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = location.port === '8000' ? '' : 'http://127.0.0.1:8000';
 const POLL_INTERVAL_MS = 1000;
 const MAX_HISTORY = 30;
 const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지연"으로 간주
@@ -329,7 +335,8 @@ const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지
 // 실제 파일명: pro-build.loader.js, pro-build.data.gz, pro-build.framework.js.gz, pro-build.wasm.gz
 const UNITY_BUILD_FOLDER = "Build";
 const UNITY_OBJECT_NAME = "_App";
-const UNITY_METHOD_NAME = "ApplyState";
+// 같은 오브젝트의 내부 상태 처리 함수와 충돌하지 않는 웹 전용 진입점.
+const UNITY_METHOD_NAME = "ApplyWebState";
 const UNITY_CLEAR_METHOD = "ClearState";
 let unityInstance = null;
 
@@ -350,6 +357,8 @@ let selectedEquipmentId = "station-01";
 
 let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
 let chart = null;
+let referenceBands = null;
+let bandLoadFailed = false;
 let lastEventId = null;
 let lastChangeAt = Date.now();
 
@@ -357,7 +366,7 @@ let lastChangeAt = Date.now();
 // 설비나 센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록 하기 위함.
 const histories = {};
 function makeHistory(){
-  const h = { labels: [], sensors: {} };
+  const h = { labels: [], sensors: {}, bandState:null };
   SENSOR_ORDER.forEach(name => { h.sensors[name] = []; });
   return h;
 }
@@ -381,12 +390,17 @@ function renderTelemetry(sensors){
     if (!(name in sensors)) return;
     const row = document.createElement("div");
     row.className = "telemetry-row" + (name === selectedSensor ? " selected" : "");
+    const bandState = currentHistory().bandState;
+    const warning = bandState && Date.now()-bandState.stamp < STALE_MS
+      && bandState.counts[name] >= (referenceBands?.warning_consecutive_samples || 3);
+    row.classList.toggle('band-warning',Boolean(warning));
     row.setAttribute("role", "button");
     row.setAttribute("tabindex", "0");
     row.title = `${name} 추이를 그래프로 보기`;
+    if (warning) row.title += ' · 기준 범위 이탈 경고 (AI 고장 판단과 별도)';
     row.innerHTML = `
       <span class="name">${name}</span>
-      <span class="val">${fmtNum(sensors[name])} ${SENSOR_UNITS[name] || ""}</span>
+      <span class="val">${warning ? '⚠ ' : ''}${fmtNum(sensors[name])} ${SENSOR_UNITS[name] || ""}</span>
     `;
     row.addEventListener("click", () => selectSensor(name));
     row.addEventListener("keydown", (e) => {
@@ -417,7 +431,7 @@ function renderDiagnosis(prediction){
   list.innerHTML = "";
 
   if (!prediction || prediction.status === "warming_up" || !prediction.components || Object.keys(prediction.components).length === 0){
-    list.innerHTML = `<div class="empty-state">AI 예측 대기 중 (원본 센서값 수신 단계)</div>`;
+    list.innerHTML = `<div class="empty-state">AI 예측 준비 중 (${prediction?.observed_window_sec || 0}/10초)</div>`;
     return;
   }
 
@@ -432,8 +446,16 @@ function renderDiagnosis(prediction){
       </span>
     `;
     list.appendChild(row);
+    const explanation = document.createElement('div');
+    explanation.style.cssText = 'font-size:11px;color:#7c8e9c;margin:0 0 12px';
+    explanation.textContent = `분류 ${c.state ?? '—'} · 모델 예측 확률 ${((c.confidence||0)*100).toFixed(1)}% · 영향 센서: ${(c.top_sensors||[]).map(s=>s.sensor).join(', ')}`;
+    list.appendChild(explanation);
   });
+  const stability = document.createElement('small');
+  stability.textContent = `설비 안정화: ${prediction.is_stable ? '안정' : '불안정'}`;
+  list.appendChild(stability);
 }
+
 
 function updateHeader(data){
   document.getElementById("cycle-id").textContent = data.event_id;
@@ -451,7 +473,8 @@ function updateHeader(data){
 
   const dot = document.getElementById("conn-dot");
   const text = document.getElementById("conn-text");
-  const stalled = (Date.now() - lastChangeAt) > STALE_MS;
+  const sourceTime = Date.parse(data.generated_at || data.updated_at || '');
+  const stalled = (Date.now() - lastChangeAt) > STALE_MS || !Number.isFinite(sourceTime) || (Date.now() - sourceTime) > STALE_MS;
 
   dot.classList.remove("live","risk-danger");
 
@@ -476,13 +499,23 @@ function updateHeader(data){
 
 function updateChart(data){
   const history = currentHistory();
+  const previous = history.bandState;
+  // 생성 초기값이 달라진 구간을 하나의 연속 그래프로 연결하지 않는다.
+  if (previous && (previous.run !== data.run_id || previous.segment !== data.segment_id)){
+    history.labels = [];
+    SENSOR_ORDER.forEach(name => history.sensors[name] = []);
+  } else if (previous && (data.event_id !== previous.event+1 || Date.parse(data.generated_at || data.updated_at)-previous.stamp > 2000)){
+    history.labels.push('수신 공백');
+    SENSOR_ORDER.forEach(name => history.sensors[name].push(null));
+  }
+  history.bandState = SensorBands.advance(previous,data,referenceBands,SENSOR_ORDER);
   history.labels.push(`#${data.event_id}`);
   SENSOR_ORDER.forEach(name => {
     // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
     history.sensors[name].push(data.sensors && name in data.sensors ? data.sensors[name] : null);
   });
 
-  if (history.labels.length > MAX_HISTORY){
+  while (history.labels.length > MAX_HISTORY){
     history.labels.shift();
     SENSOR_ORDER.forEach(name => history.sensors[name].shift());
   }
@@ -498,7 +531,24 @@ function redrawChart(){
   chart.data.labels = history.labels;
   chart.data.datasets[0].label = unit ? `${selectedSensor} (${unit})` : selectedSensor;
   chart.data.datasets[0].data = history.sensors[selectedSensor] || [];
+  const band = referenceBands?.sensors?.[selectedSensor];
+  chart.data.datasets[1].data = history.labels.map(() => band ? band.lower : null);
+  chart.data.datasets[2].data = history.labels.map(() => band ? band.upper : null);
   chart.update("none");
+  const info = document.getElementById('band-info');
+  const state = history.bandState;
+  const values = history.sensors[selectedSensor] || [];
+  const count = state?.counts[selectedSensor] || 0;
+  const stale = !state || !Number.isFinite(state.stamp) || Date.now()-state.stamp >= STALE_MS;
+  const isOutside = SensorBands.outside(values.at(-1),band);
+  const warning = !stale && isOutside === true && count >= (referenceBands?.warning_consecutive_samples || 3);
+  info.classList.toggle('warning',warning);
+  if (!band) info.textContent = bandLoadFailed ? '기준 범위 준비 실패 · 범위 판단 중지' : '정상 운전 기준 범위 불러오는 중';
+  else {
+    const status = stale ? '수신 대기·지연 — 현재 범위 판단 중지' : isOutside === null ? '유효한 센서값 없음'
+      : warning ? `기준 범위 이탈 경고 · ${count}개 연속` : isOutside ? `범위 이탈 관측 · ${count}/3개` : '기준 범위 내';
+    info.textContent = `${selectedSensor} 기준 ${fmtNum(band.lower,3)} ~ ${fmtNum(band.upper,3)} ${unit} · ${status}`;
+  }
 
   const titleEl = document.getElementById("chart-title");
   if (titleEl){
@@ -519,11 +569,16 @@ function initChart(){
           borderColor: "#2fe0c4",
           backgroundColor: "rgba(47,224,196,0.08)",
           borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.3,
-          fill: true,
-          spanGaps: true,  // 값이 빠진 구간(null)이 있어도 선을 이어서 그림
+          pointRadius: ctx => SensorBands.outside(ctx.raw,referenceBands?.sensors?.[selectedSensor]) ? 3 : 0,
+          pointBackgroundColor:'#ffab55',
+          segment:{borderColor:ctx => [ctx.p0.parsed.y,ctx.p1.parsed.y].some(v => SensorBands.outside(v,referenceBands?.sensors?.[selectedSensor])) ? '#ffab55' : '#2fe0c4'},
+          tension: 0,
+          fill: false,
+          spanGaps: false,
+          order:0,
         },
+        {label:'기준 하한',data:[],borderColor:'rgba(80,190,150,.5)',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,order:2},
+        {label:'정상 운전 기준 범위',data:[],borderColor:'rgba(80,190,150,.5)',backgroundColor:'rgba(80,190,150,.15)',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:1,order:2},
       ],
     },
     options: {
@@ -531,8 +586,10 @@ function initChart(){
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
+        tooltip:{filter:item => item.datasetIndex === 0},
         legend: {
-          labels: { color: "#7c8e9c", font: { family: "IBM Plex Mono", size: 11 }, boxWidth: 10 },
+          onClick:()=>{},
+          labels: { filter:item => item.datasetIndex !== 1, color: "#7c8e9c", font: { family: "IBM Plex Mono", size: 11 }, boxWidth: 10 },
         },
       },
       scales: {
@@ -544,13 +601,26 @@ function initChart(){
   redrawChart();
 }
 
+async function loadReferenceBands(){
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/sensors/reference-bands`);
+    if (!response.ok) throw new Error('기준 범위 응답 오류');
+    const value = await response.json();
+    if (!SENSOR_ORDER.every(s => Number.isFinite(value.sensors?.[s]?.lower) && Number.isFinite(value.sensors?.[s]?.upper))) throw new Error('센서 기준 누락');
+    referenceBands = value;
+    bandLoadFailed = false;
+    document.getElementById('band-note').textContent = `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균 하위 1%~상위 99% 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
+  } catch(error){ bandLoadFailed = true; }
+  redrawChart();
+}
+
 // ---------- Unity로 데이터 전달 (web-unity.md 규격) ----------
 function sendToUnity(payload){
   if (!unityInstance) return;
   try {
     unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_METHOD_NAME, JSON.stringify(payload));
   } catch (err) {
-    console.error("Unity SendMessage(ApplyState) 실패:", err);
+    console.error("Unity SendMessage(ApplyWebState) 실패:", err);
   }
 }
 
@@ -579,6 +649,8 @@ function pickEquipmentData(payload){
     return {
       ...target,
       event_id: payload.event_id,
+      run_id: payload.run_id,
+      segment_id: target.segment_id ?? payload.segment_id,
       elapsed_sec: payload.elapsed_sec,
       generated_at: target.generated_at || payload.generated_at,
       _isFallback: !found,  // 선택한 설비를 못 찾아 첫 번째로 대체한 경우
@@ -628,9 +700,10 @@ async function poll(){
     const data = pickEquipmentData(payload);
 
     // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
-    const isNewEvent = payload.event_id !== lastEventId;
+    const eventKey = `${payload.run_id || ''}:${payload.event_id}`;
+    const isNewEvent = eventKey !== lastEventId;
     if (isNewEvent){
-      lastEventId = payload.event_id;
+      lastEventId = eventKey;
       lastChangeAt = Date.now();
       receivedCount += 1;
       document.getElementById("poll-count").textContent = receivedCount;
@@ -649,6 +722,8 @@ async function poll(){
     document.getElementById("conn-dot").classList.remove("live");
     if (!unityCleared){ clearUnity(); unityCleared = true; }
     console.error("poll error:", err);
+  } finally {
+    redrawChart();
   }
 }
 
@@ -656,16 +731,19 @@ function loadUnity(){
   const statusEl = document.getElementById("unity-status");
   const canvas = document.getElementById("unity-canvas");
   const buildFolder = UNITY_BUILD_FOLDER;
-  const loaderUrl = `${buildFolder}/pro-build.loader.js`;
+  // 새 빌드와 이전 브라우저 캐시의 파일이 섞이지 않도록 같은 버전을 붙인다.
+  const buildVersion = '20260903-ai-labels-2';
+  const loaderUrl = `${buildFolder}/pro-build.loader.js?v=${buildVersion}`;
 
   const config = {
-    dataUrl: `${buildFolder}/pro-build.data.gz`,
-    frameworkUrl: `${buildFolder}/pro-build.framework.js.gz`,
-    codeUrl: `${buildFolder}/pro-build.wasm.gz`,
+    dataUrl: `${buildFolder}/pro-build.data.gz?v=${buildVersion}`,
+    frameworkUrl: `${buildFolder}/pro-build.framework.js.gz?v=${buildVersion}`,
+    codeUrl: `${buildFolder}/pro-build.wasm.gz?v=${buildVersion}`,
     streamingAssetsUrl: "StreamingAssets",
-    companyName: "DefaultCompany",   // 실제 Unity Player Settings 값과 달라도 로딩엔 문제 없음
-    productName: "HydraulicDigitalTwin",
-    productVersion: "1.0",
+    companyName: "HydroTwin Team",
+    productName: "HydroTwin",
+    productVersion: "0.1",
+    cacheControl: () => 'no-store',
   };
 
   const script = document.createElement("script");
@@ -695,6 +773,8 @@ function loadUnity(){
 }
 
 initChart();
+loadReferenceBands();
+setInterval(() => { if (!referenceBands) loadReferenceBands(); },30000);
 document.getElementById("unit-label").textContent = selectedEquipmentId.toUpperCase();
 loadUnity();
 poll();

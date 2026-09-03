@@ -26,7 +26,7 @@ UCI 원본 TXT
 학습에 쓰지 않은 Test 사이클
 → Kafka Producer가 1초 단위로 재생
 → hydraulic.telemetry.v1
-→ 20초 버퍼·AI 추론
+→ 10초 버퍼·AI 추론
 → hydraulic.prediction.v1
 → FastAPI 최신 상태 API
 → 웹 대시보드 + Unity WebGL
@@ -176,8 +176,8 @@ Kafka 브로커와 Docker 환경은 신종건이 담당하고, 박민은 해당 
 1. mock JSON을 전송·출력하는 최소 Kafka Producer·Consumer를 만든다.
 2. Producer가 Test 사이클을 1초 간격으로 재생하도록 바꾼다.
 3. 메시지 Key는 `machine_id`로 지정해 한 설비의 순서를 유지한다.
-4. `hydraulic.telemetry.v1` Consumer가 최근 20초 데이터를 메모리에 유지하게 한다.
-5. 20초가 쌓이면 홍유나의 `predict()`를 호출하고 이후 1초마다 다시 예측한다.
+4. `hydraulic.sensor.raw` Consumer가 최근 10초 데이터를 메모리에 유지하게 한다.
+5. 10초가 쌓이면 홍유나의 `predict()`를 호출하고 이후 1초마다 다시 예측한다.
 6. 결과를 `hydraulic.prediction.v1` Topic으로 전송한다.
 7. FastAPI가 최신 예측을 읽어 `/health`와 `/api/v1/state/latest`로 제공하게 한다.
 8. Chart.js로 센서 차트, 부품 상태 카드와 마지막 갱신 시각을 표시한다.
@@ -201,7 +201,7 @@ docs/api/api-contract.md
 ### 완료 기준
 
 - 사이클 하나가 60개의 1초 이벤트로 순서대로 전송된다.
-- 첫 예측은 20초 이후 생성되고 이후 1초마다 갱신된다.
+- 첫 예측은 10초 이후 생성되고 이후 1초마다 갱신된다.
 - `/health`가 HTTP 200을 반환한다.
 - `/api/v1/state/latest`가 아래 JSON 계약을 지킨다.
 - API 미응답과 데이터 대기 상태가 웹에 구분되어 표시된다.
@@ -230,8 +230,8 @@ docs/api/api-contract.md
 5. Jenkinsfile에 Checkout → Test → Docker Build → Deploy → Health Check 단계를 작성한다.
 6. Jenkins가 저장소의 실제 `master` 브랜치를 사용하도록 설정한다.
 7. MLflow에 파라미터, Macro F1, 모델 파일과 학습 시각을 기록한다.
-8. 보류 데이터를 신규 라벨 배치처럼 투입하는 재학습 데모를 만든다.
-9. 후보 모델이 기존 모델의 기준을 통과할 때만 승격하도록 검사한다.
+8. 드리프트 감지 결과의 온도·압력 offset을 기존 라벨 데이터에 적용하는 계절 데이터 증강 단계를 연결한다.
+9. 원본+계절 증강 데이터로 상태 예측 후보 모델을 재학습하고, 원본·계절 Test에서 모두 기준을 통과할 때만 승격한다.
 10. 새 서비스의 Health Check가 실패하면 기존 버전을 유지하는 절차를 문서화한다.
 
 ### 결과물
@@ -252,7 +252,8 @@ docs/operations/runbook.md
 - pytest가 전처리와 API 계약 오류를 잡는다.
 - Jenkins에서 Test, Build와 Health Check가 성공한다.
 - MLflow에서 최소 두 모델의 지표를 비교할 수 있다.
-- 재학습은 라벨이 있는 데이터에서만 실행된다.
+- 실시간 예측값을 라벨로 쓰지 않고 기존 검증 라벨을 유지한 계절 증강 데이터로 재학습한다.
+- 원본 Test와 계절-offset Test 중 하나라도 성능 기준에 미달하면 기존 모델이 유지된다.
 - 새 모델 성능이 기준보다 낮으면 기존 모델이 유지된다.
 
 ### 발표 범위

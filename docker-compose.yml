@@ -1,7 +1,116 @@
+name: hydrotwin
+
+x-app: &app
+  image: hydrotwin-app:local
+  build: .
+  working_dir: /app
+  volumes:
+    - .:/app
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: hydrotwin-app
+  kafka:
+    image: apache/kafka:4.0.1
+    container_name: hydrotwin-kafka
     restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes: [kafka-data:/var/lib/kafka/data]
+    healthcheck:
+      test: [CMD-SHELL, /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+
+  bootstrap:
+    <<: *app
+    profiles: [setup]
+    restart: "no"
+    command: [python, -m, src.runtime.bootstrap]
+    mem_limit: 3g
+
+  producer:
+    <<: *app
+    container_name: hydrotwin-producer
+    command: [python, -m, src.runtime.producer]
+    env_file: .env
+    environment: {KAFKA_BROKER: "kafka:9092"}
+    mem_limit: 2g
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  inference:
+    <<: *app
+    container_name: hydrotwin-inference
+    command: [python, -m, src.runtime.inference]
+    environment: {KAFKA_BROKER: "kafka:9092"}
+    mem_limit: 1g
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  monitor:
+    <<: *app
+    container_name: hydrotwin-monitor
+    command: [python, -m, src.runtime.monitor]
+    env_file: .env
+    environment: {KAFKA_BROKER: "kafka:9092", JENKINS_URL: "http://jenkins:8080"}
+    mem_limit: 2g
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  api:
+    <<: *app
+    container_name: hydrotwin-api
+    command: [uvicorn, api.main:app, --host, 0.0.0.0, --port, "8000"]
+    environment: {HYDROTWIN_RUNTIME: "1", UNITY_WEBGL_PATH: "/unity-build"}
+    volumes:
+      - .:/app
+      - type: bind
+        source: ${UNITY_WEBGL_HOST_PATH:-D:/ai-first-project/artifacts/unity/ai-labels/pro-build}
+        target: /unity-build
+        read_only: true
+    ports: ["127.0.0.1:8000:8000"]
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  jenkins:
+    image: hydrotwin-jenkins:local
+    build: infra/jenkins
+    container_name: hydrotwin-jenkins
+    # 로컬 시연용 Docker 소켓 권한. 외부 공개 서버에서는 별도 에이전트로 분리한다.
+    user: "0:0"
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=false -Xms256m -Xmx768m
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/project:ro
+    mem_limit: 1536m
+
+volumes:
+  kafka-data:
+  jenkins-data:
