@@ -1,20 +1,30 @@
 """
 kafka/consumer_v5.py  (= Raw Consumer)
 ========================================
-V5 Virtual Factory가 실제로 발행하는 Kafka 토픽(hydraulic.sensor.raw)을 구독해서
-17개 센서의 최신값을 kafka/latest_raw.json에 저장한다.
+Kafka 토픽(hydraulic.sensor.multi.raw)을 구독해서, 설비별 최신 상태를
+kafka/latest_raw.json에 저장한다. FastAPI가 이 파일을 읽어 웹/Unity로 전달한다.
 
-이 단계(1차 테스트)의 목적: AI 예측 없이, Kafka -> Consumer -> 파일까지
-원본 센서값 파이프라인이 1초 간격으로 끊기지 않고 도는지 확인하는 것.
-그래서 prediction은 항상 status="warming_up"으로 채워서 내보낸다
-(웹/Unity 쪽이 "예측 없음"을 명확히 구분해서 처리할 수 있도록).
+중요: 메시지는 설비 한 대씩 따로 온다.
+    {"equipment_id": "station-01", "timestamp": ..., "sensors": {...}}
+    {"equipment_id": "station-02", ...}
+    {"equipment_id": "station-03", ...}
+    그래서 받을 때마다 덮어쓰면 마지막 한 대만 남는다.
+    이 Consumer는 설비별로 최신값을 누적 보관해서, 파일에는 항상 3대가 모두 들어있다.
 
-메시지마다 증가하는 event_id를 부여한다. 웹/Unity는 이 event_id가 바뀌었을 때만
-화면(특히 차트)을 갱신해서, 같은 데이터를 중복으로 그리지 않도록 한다.
+저장되는 형태:
+    {
+      "station-01": { "equipment_id": ..., "sensors": {...}, "prediction": {...} },
+      "station-02": { ... },
+      "station-03": { ... },
+      "_meta": { "event_id": 12, "received_at": "...", "last_updated_equipment": "station-02" }
+    }
+
+한 메시지에 설비 여러 대가 묶여 오는 형식이나, 설비 구분이 없는 예전 형식도
+그대로 처리한다 (하위 호환).
 
 환경변수로 브로커/토픽을 덮어쓸 수 있음:
-    KAFKA_BROKER=192.168.133.108:9092 (기본값)
-    KAFKA_TOPIC=hydraulic.sensor.raw   (기본값)
+    KAFKA_BROKER=192.168.133.108:9092        (기본값)
+    KAFKA_TOPIC=hydraulic.sensor.multi.raw   (기본값)
 
 실행:
     python kafka/consumer_v5.py
@@ -29,7 +39,7 @@ from pathlib import Path
 from kafka import KafkaConsumer
 
 BROKER = os.environ.get("KAFKA_BROKER", "192.168.133.108:9092")
-TOPIC = os.environ.get("KAFKA_TOPIC", "hydraulic.sensor.raw")
+TOPIC = os.environ.get("KAFKA_TOPIC", "hydraulic.sensor.multi.raw")
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "latest_raw.json"
 
@@ -58,22 +68,86 @@ def save_latest(data: dict, max_retries: int = 8, retry_delay: float = 0.05):
             time.sleep(retry_delay)
 
 
-def handle_message(payload: dict) -> dict:
-    """V5가 보낸 원본 메시지를 API 계약(/api/v1/state/latest) 형태로 변환해서 저장한다."""
-    sensors = payload.get("sensors", {})
-    generated_at = payload.get("timestamp")  # V5가 데이터를 만든 시각
+def looks_like_equipment_map(payload: dict) -> bool:
+    """한 메시지에 설비 여러 대가 담긴 형태인지 판별한다.
 
+    예: {"station-01": {"sensors": {...}}, "station-02": {...}}
+    """
+    if not isinstance(payload, dict):
+        return False
+    for key, value in payload.items():
+        if isinstance(value, dict) and ("sensors" in value or "prediction" in value):
+            return True
+    return False
+
+
+# 설비별 최신 상태를 여기에 누적해 둔다.
+# 메시지는 설비 한 대씩 번갈아 오기 때문에, 매번 덮어쓰면 마지막 한 대만 남는다.
+_states: dict = {}
+
+
+def handle_message(payload: dict) -> dict:
+    """받은 메시지를 API가 읽을 파일 형태로 바꿔 저장한다.
+
+    지원하는 입력 형태:
+      1) {"equipment_id": "station-01", "timestamp": ..., "sensors": {...}}
+         -> 설비 한 대씩 오는 형태. 설비별로 누적해서 3대를 모두 유지한다.
+      2) {"station-01": {...}, "station-02": {...}}
+         -> 이미 설비별로 묶여 온 형태. 그대로 저장한다.
+      3) {"timestamp": ..., "sensors": {...}}
+         -> 설비 구분이 없는 예전 형태. 하위 호환으로 감싸서 저장한다.
+    """
     _event_counter["n"] += 1
     received_at = datetime.now(timezone.utc).isoformat()
 
+    # 2) 이미 설비별로 묶여 온 경우: 원본 구조를 그대로 보존
+    if looks_like_equipment_map(payload):
+        result = dict(payload)
+        result["_meta"] = {
+            "event_id": _event_counter["n"],
+            "received_at": received_at,
+            "elapsed_sec": round(time.time() - START_TIME),
+        }
+        save_latest(result)
+        return result
+
+    # 1) 설비 한 대씩 오는 경우: 해당 설비만 갱신하고 나머지는 유지
+    equipment_id = payload.get("equipment_id")
+    if equipment_id:
+        entry = {
+            "equipment_id": equipment_id,
+            "timestamp": payload.get("timestamp"),
+            "sensors": payload.get("sensors", {}),
+            "received_at": received_at,
+        }
+        # 발행 측이 예측 결과를 같이 보내면 그대로 쓰고, 없으면 대기 상태로 표시
+        entry["prediction"] = payload.get("prediction") or {
+            "status": "warming_up",
+            "result": None,
+            "window_sec": None,
+            "updated_at": received_at,
+        }
+        _states[equipment_id] = entry
+
+        result = dict(_states)
+        result["_meta"] = {
+            "event_id": _event_counter["n"],
+            "received_at": received_at,
+            "elapsed_sec": round(time.time() - START_TIME),
+            "last_updated_equipment": equipment_id,
+        }
+        save_latest(result)
+        return result
+
+    # 3) 설비 구분이 없는 예전 형식
     result = {
         "event_id": _event_counter["n"],
-        "cycle_id": 1,  # 이 단계에서는 고정값 (60초 사이클 개념 아직 미적용)
+        "cycle_id": 1,
         "elapsed_sec": round(time.time() - START_TIME),
-        "generated_at": generated_at,   # V5가 메시지를 만든 시각
-        "received_at": received_at,     # 우리 Consumer가 받은 시각
-        "updated_at": received_at,      # 하위 호환용 (기존 필드명 유지)
-        "sensors": sensors,
+        "generated_at": payload.get("timestamp"),
+        "received_at": received_at,
+        "updated_at": received_at,
+        "sensors": payload.get("sensors", {}),
         "prediction": {
             "status": "warming_up",
             "observed_window_sec": 0,
@@ -105,7 +179,14 @@ def main():
         payload = message.value
         try:
             result = handle_message(payload)
-            print(f"[raw_consumer] event_id={result['event_id']} 수신 -> latest_raw.json 저장")
+            meta = result.get("_meta")
+            if meta:
+                stations = sorted(k for k in result if k != "_meta")
+                updated = meta.get("last_updated_equipment", "-")
+                print(f"[raw_consumer] event_id={meta['event_id']} "
+                      f"{updated} 갱신 | 보관 중 {len(stations)}대: {', '.join(stations)}")
+            else:
+                print(f"[raw_consumer] event_id={result['event_id']} 수신 -> {OUTPUT_PATH.name} 저장")
         except Exception as e:
             # 파일 저장 한 번 실패했다고 전체 스트림이 죽으면 안 됨 -> 로그만 남기고 계속 진행
             print(f"[raw_consumer] 저장 실패 (다음 메시지로 계속 진행): {e}")

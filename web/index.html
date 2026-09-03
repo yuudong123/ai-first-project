@@ -104,15 +104,62 @@
   .dot.risk-danger{ background:var(--danger); box-shadow:0 0 0 3px rgba(248,113,113,0.15); }
 
   /* ---------- 레이아웃 ---------- */
+  /* 사이드바 너비와 차트 높이는 드래그로 조절되며, 값은 아래 CSS 변수로 관리한다 */
   main{
     display:grid;
-    grid-template-columns:1fr 340px;
-    gap:1px;
+    grid-template-columns:1fr 6px var(--side-width, 340px);
+    gap:0;
     background:var(--border-soft);
   }
   @media (max-width:900px){
     main{ grid-template-columns:1fr; }
+    .col-resizer{ display:none; }
   }
+
+  /* 사이드바 너비 조절 손잡이 (좌우 드래그) */
+  .col-resizer{
+    background:var(--bg-panel);
+    border-left:1px solid var(--border-soft);
+    border-right:1px solid var(--border-soft);
+    cursor:col-resize;
+    position:relative;
+    transition:background .15s;
+  }
+  .col-resizer:hover,
+  .col-resizer.dragging{ background:var(--accent-dim); }
+  /* 얇은 선이라 잡기 어려우므로, 보이지 않는 여유 영역을 좌우로 넓혀준다 */
+  .col-resizer::before{
+    content:"";
+    position:absolute;
+    top:0; bottom:0; left:-6px; right:-6px;
+  }
+  /* 잡는 곳임을 알려주는 점선 그립 */
+  .col-resizer::after{
+    content:"";
+    position:absolute;
+    top:50%; left:50%;
+    width:2px; height:30px;
+    transform:translate(-50%,-50%);
+    border-radius:1px;
+    background:repeating-linear-gradient(
+      to bottom,
+      var(--text-secondary) 0 2px,
+      transparent 2px 5px
+    );
+    pointer-events:none;
+  }
+  .col-resizer:hover::after,
+  .col-resizer.dragging::after{
+    background:repeating-linear-gradient(
+      to bottom,
+      var(--accent) 0 2px,
+      transparent 2px 5px
+    );
+  }
+
+  /* 드래그 중에는 텍스트 선택이나 커서 깜빡임이 생기지 않도록 */
+  body.resizing{ user-select:none; }
+  body.resizing-col, body.resizing-col *{ cursor:col-resize !important; }
 
   .panel{ background:var(--bg-base); padding:24px; }
   .panel-title{
@@ -124,7 +171,20 @@
   }
 
   /* ---------- 사이드바: 텔레메트리 ---------- */
-  .side-panel{ background:var(--bg-base); border-left:1px solid var(--border-soft); }
+  .side-panel{
+    background:var(--bg-base);
+    border-left:1px solid var(--border-soft);
+    /* 사이드바를 넓히면 Unity 패널(16:9)이 낮아져 행 높이가 줄어드는데,
+       그때 사이드바 내용이 잘리지 않도록 최소 높이를 확보하고 넘치면 스크롤한다 */
+    min-height:520px;
+    overflow-y:auto;
+    scrollbar-width:thin;
+    scrollbar-color:var(--border) transparent;
+  }
+  .side-panel::-webkit-scrollbar{ width:6px; }
+  .side-panel::-webkit-scrollbar-track{ background:transparent; }
+  .side-panel::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
+  .side-panel::-webkit-scrollbar-thumb:hover{ background:var(--text-dim); }
   .section{ padding:22px 24px; border-bottom:1px solid var(--border-soft); }
   .section-header{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -141,7 +201,7 @@
 
   .telemetry-list{
     display:flex; flex-direction:column; gap:4px;
-    max-height:280px;
+    max-height:var(--telemetry-height, 280px);
     overflow-y:auto;
     /* 스크롤바가 값 텍스트를 가리지 않도록 오른쪽에 여백 확보 */
     padding-right:10px;
@@ -181,7 +241,11 @@
   .telemetry-row .name{ color:var(--text-secondary); transition:color .15s; }
   .telemetry-row .val{ font-family:var(--font-mono); color:var(--text-primary); }
 
-  .diag-list{ display:flex; flex-direction:column; gap:10px; }
+  .diag-list{
+    display:flex; flex-direction:column; gap:10px;
+    /* 예측 결과가 아직 없을 때도 영역이 유지되도록 최소 높이 확보 */
+    min-height:120px;
+  }
   .diag-row{
     display:flex; justify-content:space-between; align-items:center;
     padding:9px 10px;
@@ -192,6 +256,12 @@
   .diag-row .name{ font-size:12.5px; color:var(--text-secondary); }
   .diag-row .state{ display:flex; align-items:center; gap:7px; }
   .diag-row .state-text{ font-family:var(--font-mono); font-size:11.5px; }
+  .diag-meta{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    color:var(--text-dim);
+    padding-left:2px;
+  }
   .badge{
     width:7px; height:7px; border-radius:50%;
   }
@@ -271,7 +341,7 @@
   </div>
 
   <div class="status-cluster">
-    <div class="status-item"><span>사이클 #<span id="cycle-id">—</span></span></div>
+    <div class="status-item"><span>예측 윈도우 <span id="cycle-id">—</span></span></div>
     <div class="status-item"><span id="update-age">데이터 대기 중</span></div>
     <div class="status-item">
       <span class="dot" id="conn-dot"></span>
@@ -288,6 +358,9 @@
       <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
     </div>
   </section>
+
+  <div class="col-resizer" id="col-resizer" role="separator" aria-orientation="vertical"
+       aria-label="사이드바 너비 조절" title="왼쪽으로 드래그해서 넓히기 (더블클릭: 기본 너비)"></div>
 
   <aside class="side-panel">
     <div class="section">
@@ -348,10 +421,10 @@ const COMPONENT_LABEL = { pump:"펌프", valve:"밸브", cooler:"쿨러", accumu
 const EQUIPMENT_IDS = ["station-01", "station-02", "station-03"];
 let selectedEquipmentId = "station-01";
 
-let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
+let receivedCount = 0;   // 데이터가 실제로 갱신된 횟수 (같은 값 반복은 카운트 안 함)
 let chart = null;
-let lastEventId = null;
 let lastChangeAt = Date.now();
+const PAGE_START = Date.now();
 
 // 설비별 × 센서별로 이력을 따로 쌓아둔다.
 // 설비나 센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록 하기 위함.
@@ -416,35 +489,61 @@ function renderDiagnosis(prediction){
   const list = document.getElementById("diag-list");
   list.innerHTML = "";
 
-  if (!prediction || prediction.status === "warming_up" || !prediction.components || Object.keys(prediction.components).length === 0){
-    list.innerHTML = `<div class="empty-state">AI 예측 대기 중 (원본 센서값 수신 단계)</div>`;
+  if (!prediction){
+    list.innerHTML = `<div class="empty-state">예측 결과 대기 중</div>`;
     return;
   }
 
-  Object.entries(prediction.components).forEach(([key, c]) => {
-    const row = document.createElement("div");
-    row.className = "diag-row";
-    row.innerHTML = `
-      <span class="name">${COMPONENT_LABEL[key] || key}</span>
-      <span class="state">
-        <span class="badge risk-${c.risk_level}"></span>
-        <span class="state-text risk-${c.risk_level}">${RISK_LABEL[c.risk_level] || c.risk_level}</span>
-      </span>
-    `;
-    list.appendChild(row);
-  });
+  // 아직 버퍼가 안 찼거나 준비 중인 상태
+  if (prediction.status && prediction.status !== "ready"){
+    const windowSec = prediction.window_sec || 10;
+    list.innerHTML = `<div class="empty-state">AI 예측 준비 중 (${windowSec}초 데이터 수집 단계)</div>`;
+    return;
+  }
+
+  // LightGBM 판정 결과: normal / abnormal
+  const result = prediction.result;
+  const isAbnormal = result === "abnormal";
+  const risk = isAbnormal ? "danger" : "normal";
+  const label = isAbnormal ? "이상" : "정상";
+
+  const row = document.createElement("div");
+  row.className = "diag-row";
+  row.innerHTML = `
+    <span class="name">설비 종합 판정</span>
+    <span class="state">
+      <span class="badge risk-${risk}"></span>
+      <span class="state-text risk-${risk}">${label}</span>
+    </span>
+  `;
+  list.appendChild(row);
+
+  const meta = document.createElement("div");
+  meta.className = "diag-meta";
+  const windowSec = prediction.window_sec != null ? `${prediction.window_sec}초 윈도우` : "";
+  const updatedAt = prediction.updated_at
+    ? new Date(prediction.updated_at).toLocaleTimeString("ko-KR", { hour12: false })
+    : "";
+  meta.textContent = [windowSec, updatedAt && `갱신 ${updatedAt}`].filter(Boolean).join(" · ");
+  list.appendChild(meta);
 }
 
 function updateHeader(data){
-  document.getElementById("cycle-id").textContent = data.event_id;
-  document.getElementById("elapsed-sec").textContent = data.elapsed_sec;
+  const pred = data.prediction || {};
 
-  // "생성 시각"(V5가 데이터를 만든 시점) 기준으로 경과 시간 표시.
-  // received_at은 우리 Consumer가 받은 시각이라 둘이 다를 수 있음(네트워크 지연).
-  if (data.generated_at){
-    const generatedAt = new Date(data.generated_at);
-    const ageSec = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
-    document.getElementById("update-age").textContent = `생성 후 ${ageSec}초`;
+  // 예측 윈도우 길이 표시 (신종건 측 파이프라인 기준 10초)
+  document.getElementById("cycle-id").textContent =
+    pred.window_sec != null ? `${pred.window_sec}s` : "—";
+
+  // 페이지를 연 뒤 경과한 시간
+  document.getElementById("elapsed-sec").textContent =
+    Math.round((Date.now() - PAGE_START) / 1000);
+
+  // 예측이 만들어진 시각 기준으로 얼마나 지났는지
+  if (pred.updated_at){
+    const updatedAt = new Date(pred.updated_at);
+    const ageSec = Math.max(0, Math.round((Date.now() - updatedAt.getTime()) / 1000));
+    document.getElementById("update-age").textContent = `갱신 후 ${ageSec}초`;
   } else {
     document.getElementById("update-age").textContent = "—";
   }
@@ -458,27 +557,73 @@ function updateHeader(data){
   if (stalled){
     text.textContent = "데이터 지연";
     if (!unityCleared){ clearUnity(); unityCleared = true; }
+  } else if (pred.result === "abnormal"){
+    dot.classList.add("risk-danger");
+    text.textContent = "이상 감지됨";
   } else {
-    const anyDanger = data.prediction && data.prediction.components
-      ? Object.values(data.prediction.components).some(c => c.risk_level === "danger")
-      : false;
-    if (anyDanger){
-      dot.classList.add("risk-danger");
-      text.textContent = "위험 감지됨";
-    } else {
-      dot.classList.add("live");
-      text.textContent = data.prediction && data.prediction.status === "warming_up"
-        ? "정상 수신 중 (AI 대기)"
-        : "정상 수신 중";
-    }
+    dot.classList.add("live");
+    text.textContent = (pred.status && pred.status !== "ready")
+      ? "정상 수신 중 (AI 준비 중)"
+      : "정상 수신 중";
   }
 }
 
-function updateChart(data){
-  const history = currentHistory();
-  history.labels.push(`#${data.event_id}`);
+/** 이번 응답에 들어있는 설비 ID 목록을 뽑는다 (설비별 이력을 모두 기록하기 위함) */
+function listEquipmentIds(payload){
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload)){
+    return payload.map(s => s.equipment_id).filter(Boolean);
+  }
+  if (Array.isArray(payload.equipment_states)){
+    return payload.equipment_states.map(s => s.equipment_id).filter(Boolean);
+  }
+  // 설비 ID를 키로 갖는 객체 (_meta 같은 부가 키는 제외)
+  return Object.keys(payload).filter(k => {
+    const v = payload[k];
+    return v && typeof v === "object" && (v.sensors || v.prediction);
+  });
+}
+
+/** 특정 설비의 데이터를 응답에서 꺼낸다 */
+function getEquipmentById(payload, id){
+  if (!payload || typeof payload !== "object") return null;
+  if (!Array.isArray(payload) && payload[id]) return payload[id];
+  const list = Array.isArray(payload) ? payload
+             : (Array.isArray(payload.equipment_states) ? payload.equipment_states : null);
+  if (list) return list.find(s => s.equipment_id === id) || null;
+  return null;
+}
+
+/**
+ * 화면에 보이지 않는 설비까지 포함해서 모든 설비의 이력을 기록한다.
+ * 이렇게 해두면 Unity에서 다른 설비를 클릭했을 때 그 설비의 지난 추이가 바로 보인다.
+ */
+function updateAllHistories(payload){
+  const ids = listEquipmentIds(payload);
+
+  if (ids.length === 0){
+    // 설비 구분이 없는 단일 데이터: 현재 선택된 설비 이력에만 기록
+    const single = pickEquipmentData(payload);
+    if (single) recordHistory(selectedEquipmentId, single);
+    return;
+  }
+
+  ids.forEach(id => {
+    const data = getEquipmentById(payload, id);
+    if (data) recordHistory(id, data);
+  });
+}
+
+/** 설비 하나의 이력에 이번 값을 한 점 추가한다 */
+function recordHistory(equipmentId, data){
+  if (!histories[equipmentId]) histories[equipmentId] = makeHistory();
+  const history = histories[equipmentId];
+  const pred = data.prediction || {};
+
+  const stampSource = pred.updated_at ? new Date(pred.updated_at) : new Date();
+  history.labels.push(stampSource.toLocaleTimeString("ko-KR", { hour12: false }));
+
   SENSOR_ORDER.forEach(name => {
-    // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
     history.sensors[name].push(data.sensors && name in data.sensors ? data.sensors[name] : null);
   });
 
@@ -486,7 +631,10 @@ function updateChart(data){
     history.labels.shift();
     SENSOR_ORDER.forEach(name => history.sensors[name].shift());
   }
+}
 
+function updateChart(payload){
+  updateAllHistories(payload);
   redrawChart();
 }
 
@@ -565,27 +713,49 @@ function clearUnity(){
 
 let unityCleared = false; // 연속으로 여러 번 ClearState를 호출하지 않기 위한 플래그
 let lastPayload = null;   // 설비를 바꿨을 때 즉시 다시 그리기 위해 마지막 응답을 보관
+let lastStamp = null;     // 데이터가 실제로 바뀌었는지 판별하기 위한 지문
 
 /**
- * API 응답에서 현재 선택된 설비의 데이터만 골라낸다.
- * - equipment_states 배열이 오면 selectedEquipmentId와 일치하는 항목을 사용
- * - 그런 배열이 없으면(현재 상태) 설비 구분 없는 단일 데이터를 그대로 사용
- *   -> V5가 나중에 설비별 데이터를 보내기 시작해도 코드 수정 없이 동작
+ * State 파일이 어떤 형태로 오든 선택된 설비의 데이터를 꺼낸다.
+ * 지원하는 형태:
+ *   1) { "station-01": {...}, "station-02": {...} }   (설비 ID를 키로 갖는 객체)
+ *   2) { equipment_states: [ {equipment_id, ...}, ... ] }  (배열로 감싼 형태)
+ *   3) [ {equipment_id, ...}, ... ]                    (최상위가 배열)
+ *   4) { sensors: {...}, prediction: {...} }           (설비 구분 없는 단일 데이터)
  */
 function pickEquipmentData(payload){
-  if (Array.isArray(payload.equipment_states) && payload.equipment_states.length > 0){
-    const found = payload.equipment_states.find(s => s.equipment_id === selectedEquipmentId);
-    const target = found || payload.equipment_states[0];
-    return {
-      ...target,
-      event_id: payload.event_id,
-      elapsed_sec: payload.elapsed_sec,
-      generated_at: target.generated_at || payload.generated_at,
-      _isFallback: !found,  // 선택한 설비를 못 찾아 첫 번째로 대체한 경우
-    };
+  if (!payload || typeof payload !== "object") return null;
+
+  // 1) 설비 ID를 키로 갖는 객체
+  if (!Array.isArray(payload) && payload[selectedEquipmentId]){
+    return payload[selectedEquipmentId];
   }
-  // 설비 구분이 아직 없는 단계: 하나의 데이터를 모든 설비가 공유
-  return { ...payload, _isShared: true };
+
+  // 2) / 3) 배열 형태
+  const list = Array.isArray(payload) ? payload
+             : (Array.isArray(payload.equipment_states) ? payload.equipment_states : null);
+  if (list && list.length > 0){
+    return list.find(s => s.equipment_id === selectedEquipmentId) || list[0];
+  }
+
+  // 1)에서 선택 설비를 못 찾았지만, 다른 설비 키는 있는 경우 -> 첫 번째 설비로 대체
+  if (!Array.isArray(payload)){
+    const firstStation = EQUIPMENT_IDS.find(id => payload[id]);
+    if (firstStation) return payload[firstStation];
+  }
+
+  // 4) 설비 구분 없는 단일 데이터
+  if (payload.sensors) return payload;
+
+  return null;
+}
+
+/** 응답이 실제로 바뀌었는지 판별할 지문. event_id가 없는 형식이라 updated_at을 사용. */
+function makeStamp(payload, view){
+  const pred = view && view.prediction;
+  if (pred && pred.updated_at) return String(pred.updated_at);
+  if (payload && payload.updated_at) return String(payload.updated_at);
+  try { return JSON.stringify(view && view.sensors); } catch (e) { return String(Date.now()); }
 }
 
 function renderSelectedEquipment(){
@@ -598,8 +768,11 @@ function renderSelectedEquipment(){
   // 마지막으로 받은 데이터가 있으면 즉시 화면 갱신 (다음 폴링까지 기다리지 않도록)
   if (lastPayload){
     const view = pickEquipmentData(lastPayload);
-    renderTelemetry(view.sensors);
-    renderDiagnosis(view.prediction);
+    if (view){
+      renderTelemetry(view.sensors || {});
+      renderDiagnosis(view.prediction);
+      updateHeader(view);   // 설비마다 판정이 다르므로 헤더 상태도 같이 갱신
+    }
   }
 }
 
@@ -617,7 +790,7 @@ async function poll(){
     const res = await fetch(`${API_BASE}/api/v1/state/latest`);
     if (!res.ok) {
       if (res.status === 503){
-        document.getElementById("conn-text").textContent = "Raw Consumer 대기 중";
+        document.getElementById("conn-text").textContent = "State 데이터 대기 중";
         document.getElementById("conn-dot").classList.remove("live");
         if (!unityCleared){ clearUnity(); unityCleared = true; }
       }
@@ -625,23 +798,29 @@ async function poll(){
     }
     const payload = await res.json();
     lastPayload = payload;
-    const data = pickEquipmentData(payload);
 
-    // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
-    const isNewEvent = payload.event_id !== lastEventId;
-    if (isNewEvent){
-      lastEventId = payload.event_id;
+    const data = pickEquipmentData(payload);
+    if (!data){
+      document.getElementById("conn-text").textContent = "설비 데이터 없음";
+      document.getElementById("conn-dot").classList.remove("live");
+      return;
+    }
+
+    // updated_at이 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
+    const stamp = makeStamp(payload, data);
+    if (stamp !== lastStamp){
+      lastStamp = stamp;
       lastChangeAt = Date.now();
       receivedCount += 1;
       document.getElementById("poll-count").textContent = receivedCount;
-      updateChart(data);
+      updateChart(payload);
 
       // Unity에는 원본 응답을 그대로 전달 (설비 3대를 Unity가 각각 처리하도록)
       sendToUnity(payload);
       unityCleared = false;
     }
 
-    renderTelemetry(data.sensors);
+    renderTelemetry(data.sensors || {});
     renderDiagnosis(data.prediction);
     updateHeader(data);
   } catch (err) {
@@ -694,7 +873,78 @@ function loadUnity(){
   document.body.appendChild(script);
 }
 
+// ---------- 크기 조절 (사이드바 너비) ----------
+// 최소값을 기본값과 같게 둬서 "넓히기"만 가능하게 한다.
+// (좁히면 센서 이름/값이 붙어버려서 읽기 어려워지므로)
+const SIDE_DEFAULT = 340;
+const SIDE_MIN = SIDE_DEFAULT, SIDE_MAX = 720;
+
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+function setSideWidth(px){
+  const w = clamp(px, SIDE_MIN, SIDE_MAX);
+  document.documentElement.style.setProperty("--side-width", `${w}px`);
+  // 사이드바를 넓혀도 센서 목록이 과하게 길어지지 않도록 완만하게만 늘린다
+  // (너무 길어지면 아래 AI 진단 영역이 밀려서 잘릴 수 있음)
+  document.documentElement.style.setProperty(
+    "--telemetry-height", `${clamp(280 + (w - SIDE_DEFAULT) * 0.25, 240, 400)}px`
+  );
+  return w;
+}
+
+/**
+ * 사이드바 너비 조절 손잡이를 동작하게 만든다.
+ * 왼쪽으로 끌수록 사이드바가 넓어진다.
+ */
+function initResizers(){
+  const handle = document.getElementById("col-resizer");
+  const sidePanel = document.querySelector(".side-panel");
+  if (!handle) return;
+
+  const getSize = () => sidePanel ? sidePanel.getBoundingClientRect().width : SIDE_DEFAULT;
+
+  let startX = 0, startSize = 0, dragging = false;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const point = e.touches ? e.touches[0] : e;
+    setSideWidth(startSize + (startX - point.clientX));
+  };
+
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("dragging");
+    document.body.classList.remove("resizing", "resizing-col");
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    window.removeEventListener("touchmove", onMove);
+    window.removeEventListener("touchend", onUp);
+  };
+
+  const onDown = (e) => {
+    const point = e.touches ? e.touches[0] : e;
+    dragging = true;
+    startX = point.clientX;
+    startSize = getSize();
+    handle.classList.add("dragging");
+    document.body.classList.add("resizing", "resizing-col");
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    e.preventDefault();
+  };
+
+  handle.addEventListener("mousedown", onDown);
+  handle.addEventListener("touchstart", onDown, { passive: false });
+
+  // 더블클릭하면 기본 너비로 되돌리기
+  handle.addEventListener("dblclick", () => setSideWidth(SIDE_DEFAULT));
+}
+
 initChart();
+initResizers();
 document.getElementById("unit-label").textContent = selectedEquipmentId.toUpperCase();
 loadUnity();
 poll();
