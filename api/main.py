@@ -34,6 +34,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 LATEST_RAW_PATH = BASE_DIR / "kafka" / "latest_raw.json"
 if os.getenv('HYDROTWIN_RUNTIME') == '1':
     LATEST_RAW_PATH = BASE_DIR / 'artifacts/runtime/latest.json'
+if os.getenv('HYDROTWIN_REMOTE') == '1':
+    LATEST_RAW_PATH = BASE_DIR / 'artifacts/runtime/remote_latest.json'
 
 START_TIME = time.time()
 STALE_THRESHOLD_SEC = 5  # 1초 간격 스트림이므로, 5초 이상 안 들어오면 "지연"으로 간주
@@ -112,9 +114,19 @@ def get_state_latest():
     if data is None:
         raise HTTPException(
             status_code=503,
-            detail="아직 Raw Consumer로부터 데이터를 받지 못했습니다. kafka/consumer_v5.py가 실행 중인지 확인하세요.",
+            detail="아직 센서 데이터를 받지 못했습니다. 현재 실행 모드의 추론 컨슈머와 Kafka 연결을 확인하세요.",
         )
-    if os.getenv('HYDROTWIN_RUNTIME') == '1':
+    if data.get('source') == 'remote_multi':
+        # 한 설비가 멈춰도 다른 설비의 신선한 시각으로 덮어쓰지 않는다.
+        for state in data.get('equipment_states',[]):
+            stamp = datetime.fromisoformat(state['generated_at'])
+            if (datetime.now(timezone.utc)-stamp).total_seconds() > STALE_THRESHOLD_SEC:
+                state['prediction'] = {'status':'stale','observed_window_sec':0,'components':{}}
+            if state.get('equipment_id') == data.get('equipment_id'):
+                data['prediction'] = state['prediction']
+        data['monitoring'] = {'drift':{'status':'disabled'},'retraining':{'status':'disabled'},
+            'message':'원격 설비별 수신·추론 모드: 자동 재학습 연결 안 함'}
+    elif os.getenv('HYDROTWIN_RUNTIME') == '1':
         retraining = read_state('retraining.json')
         request = read_state('retrain_request.json')
         # 이전 생성기 실행의 재학습 결과를 이번 실행의 상태처럼 표시하지 않는다.
@@ -150,7 +162,7 @@ class UnityStaticFiles(StaticFiles):
         return response
 
 
-# 생성된 대용량 빌드는 저장소 밖 D드라이브에서 읽기 전용으로 제공한다.
+# 생성된 대용량 빌드는 환경변수로 지정한 외부 경로에서 읽기 전용으로 제공한다.
 unity_build_root = Path(os.getenv('UNITY_WEBGL_PATH', str(BASE_DIR/'web')))
 if (unity_build_root/'Build'/'pro-build.loader.js').is_file():
     app.mount('/Build', UnityStaticFiles(directory=unity_build_root/'Build'), name='unity-build')

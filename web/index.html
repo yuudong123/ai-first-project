@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="chart.umd.js"></script>
 <script src="sensor-bands.js?v=20260903-1"></script>
+<script src="equipment-state.js?v=20260903-1"></script>
 <style>
   :root{
     --bg-base:#0a0f14;
@@ -372,9 +373,9 @@ function makeHistory(){
 }
 EQUIPMENT_IDS.forEach(id => { histories[id] = makeHistory(); });
 
-function currentHistory(){
-  if (!histories[selectedEquipmentId]) histories[selectedEquipmentId] = makeHistory();
-  return histories[selectedEquipmentId];
+function currentHistory(id=selectedEquipmentId){
+  if (!histories[id]) histories[id] = makeHistory();
+  return histories[id];
 }
 
 let selectedSensor = "CE";  // 기본으로 보여줄 센서
@@ -430,8 +431,11 @@ function renderDiagnosis(prediction){
   const list = document.getElementById("diag-list");
   list.innerHTML = "";
 
-  if (!prediction || prediction.status === "warming_up" || !prediction.components || Object.keys(prediction.components).length === 0){
-    list.innerHTML = `<div class="empty-state">AI 예측 준비 중 (${prediction?.observed_window_sec || 0}/10초)</div>`;
+  if (!prediction || prediction.status !== "ready" || !prediction.components || Object.keys(prediction.components).length === 0){
+    const message = prediction?.status === 'stale' ? '해당 설비 데이터 지연 · 예측 갱신 대기'
+      : prediction?.status === 'waiting' ? '해당 설비 데이터 수신 대기'
+      : `AI 예측 준비 중 (${prediction?.observed_window_sec || 0}/10초)`;
+    list.innerHTML = `<div class="empty-state">${message}</div>`;
     return;
   }
 
@@ -480,7 +484,8 @@ function updateHeader(data){
 
   if (stalled){
     text.textContent = "데이터 지연";
-    if (!unityCleared){ clearUnity(); unityCleared = true; }
+    // 멀티 모드에서 선택 설비 하나가 지연되어도 다른 설비를 지우지 않는다.
+    if (!Array.isArray(lastPayload?.equipment_states) && !unityCleared){ clearUnity(); unityCleared = true; }
   } else {
     const anyDanger = data.prediction && data.prediction.components
       ? Object.values(data.prediction.components).some(c => c.risk_level === "danger")
@@ -497,9 +502,10 @@ function updateHeader(data){
   }
 }
 
-function updateChart(data){
-  const history = currentHistory();
+function updateChart(data,equipmentId=selectedEquipmentId){
+  const history = currentHistory(equipmentId);
   const previous = history.bandState;
+  if (previous && previous.run === data.run_id && previous.event === data.event_id) return;
   // 생성 초기값이 달라진 구간을 하나의 연속 그래프로 연결하지 않는다.
   if (previous && (previous.run !== data.run_id || previous.segment !== data.segment_id)){
     history.labels = [];
@@ -571,6 +577,7 @@ function initChart(){
           borderWidth: 2,
           pointRadius: ctx => SensorBands.outside(ctx.raw,referenceBands?.sensors?.[selectedSensor]) ? 3 : 0,
           pointBackgroundColor:'#ffab55',
+          pointBorderColor:'#ffab55',
           segment:{borderColor:ctx => [ctx.p0.parsed.y,ctx.p1.parsed.y].some(v => SensorBands.outside(v,referenceBands?.sensors?.[selectedSensor])) ? '#ffab55' : '#2fe0c4'},
           tension: 0,
           fill: false,
@@ -609,7 +616,7 @@ async function loadReferenceBands(){
     if (!SENSOR_ORDER.every(s => Number.isFinite(value.sensors?.[s]?.lower) && Number.isFinite(value.sensors?.[s]?.upper))) throw new Error('센서 기준 누락');
     referenceBands = value;
     bandLoadFailed = false;
-    document.getElementById('band-note').textContent = `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균 하위 1%~상위 99% 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
+    document.getElementById('band-note').textContent = `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
   } catch(error){ bandLoadFailed = true; }
   redrawChart();
 }
@@ -643,21 +650,7 @@ let lastPayload = null;   // 설비를 바꿨을 때 즉시 다시 그리기 위
  *   -> V5가 나중에 설비별 데이터를 보내기 시작해도 코드 수정 없이 동작
  */
 function pickEquipmentData(payload){
-  if (Array.isArray(payload.equipment_states) && payload.equipment_states.length > 0){
-    const found = payload.equipment_states.find(s => s.equipment_id === selectedEquipmentId);
-    const target = found || payload.equipment_states[0];
-    return {
-      ...target,
-      event_id: payload.event_id,
-      run_id: payload.run_id,
-      segment_id: target.segment_id ?? payload.segment_id,
-      elapsed_sec: payload.elapsed_sec,
-      generated_at: target.generated_at || payload.generated_at,
-      _isFallback: !found,  // 선택한 설비를 못 찾아 첫 번째로 대체한 경우
-    };
-  }
-  // 설비 구분이 아직 없는 단계: 하나의 데이터를 모든 설비가 공유
-  return { ...payload, _isShared: true };
+  return EquipmentState.select(payload,selectedEquipmentId);
 }
 
 function renderSelectedEquipment(){
@@ -707,12 +700,18 @@ async function poll(){
       lastChangeAt = Date.now();
       receivedCount += 1;
       document.getElementById("poll-count").textContent = receivedCount;
-      updateChart(data);
+      if (Array.isArray(payload.equipment_states)){
+        payload.equipment_states.forEach(state => {
+          if (EQUIPMENT_IDS.includes(state.equipment_id)) updateChart(state,state.equipment_id);
+        });
+      } else updateChart(data);
 
       // Unity에는 원본 응답을 그대로 전달 (설비 3대를 Unity가 각각 처리하도록)
       sendToUnity(payload);
       unityCleared = false;
     }
+    // 메시지가 멈춘 설비의 stale 상태도 Unity에 전달한다.
+    if (!isNewEvent && Array.isArray(payload.equipment_states)) sendToUnity(payload);
 
     renderTelemetry(data.sensors);
     renderDiagnosis(data.prediction);
@@ -723,6 +722,9 @@ async function poll(){
     if (!unityCleared){ clearUnity(); unityCleared = true; }
     console.error("poll error:", err);
   } finally {
+    // 연결 실패 시 마지막 경고를 현재 판단처럼 남기지 않는다.
+    const state = currentHistory().bandState;
+    if (lastPayload && (!state || Date.now()-state.stamp >= STALE_MS)) renderTelemetry(pickEquipmentData(lastPayload).sensors);
     redrawChart();
   }
 }
