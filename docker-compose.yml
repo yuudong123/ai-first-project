@@ -1,7 +1,79 @@
 services:
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: hydrotwin-app
     restart: unless-stopped
+
+  multi-producer:
+    image: ai-first-project-runtime:latest
+    container_name: hydrotwin-multi-producer
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    command:
+      - python
+      - -u
+      - kafka/virtual_factory_multi_producer_v5.py
+      - --broker
+      - hydraulic-kafka:29092
+      - --topic
+      - hydraulic.sensor.multi.raw
+      - --interval
+      - "1"
+      - --seconds
+      - "0"
+      - --drift-mode
+      - manual
+      - --drift-temp-min-offset
+      - "0"
+      - --drift-temp-max-offset
+      - "4"
+      - --drift-pressure-min-percent
+      - "0"
+      - --drift-pressure-max-percent
+      - "3"
+      - --drift-min-duration-sec
+      - "20"
+      - --drift-max-duration-sec
+      - "60"
+      - --drift-max-hold-sec
+      - "30"
+      - --drift-control-file
+      - /app/kafka/run/drift_control.json
+      - --drift-status-file
+      - /app/kafka/run/drift_status.json
+      - --quiet
+
+  multi-consumer:
+    image: ai-first-project-runtime:latest
+    container_name: hydrotwin-multi-consumer
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    command:
+      - python
+      - -u
+      - kafka/raw_consumer_multi.py
+      - --broker
+      - hydraulic-kafka:29092
+      - --topic
+      - hydraulic.sensor.multi.raw
+      - --output
+      - kafka/latest_raw_by_equipment.json
+      - --group-id
+      - hydrotwin-multi-compose
+      - --quiet
+
+  state-builder:
+    image: ai-first-project-runtime:latest
+    container_name: hydrotwin-state-builder
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    command:
+      - python
+      - -u
+      - kafka/prediction_state_builder_multi.py

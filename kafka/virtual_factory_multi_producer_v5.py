@@ -28,6 +28,21 @@ if str(SIMULATOR_SOURCE) not in sys.path:
     sys.path.insert(0, str(SIMULATOR_SOURCE))
 
 from v5_generation_utils import CYCLE_SECONDS, SENSOR_COUNT, WINDOW_SIZE  # noqa: E402
+from drift_injector import (  # noqa: E402
+    DRIFT_MAX_DURATION_SEC,
+    DRIFT_MIN_DURATION_SEC,
+    DRIFT_MODES,
+    DRIFT_SENSORS,
+    FALLING_DURATION_RATIO,
+    MAX_HOLD_DURATION_RATIO,
+    PRESSURE_MAX_PERCENT,
+    PRESSURE_MIN_PERCENT,
+    RISING_DURATION_RATIO,
+    TEMP_MAX_OFFSET,
+    TEMP_MIN_OFFSET,
+    DriftConfig,
+    DriftInjector,
+)
 from v5_multi_station_utils import (  # noqa: E402
     DEFAULT_SEED_RECORDS,
     EQUIPMENT_IDS,
@@ -53,6 +68,8 @@ METADATA_FILE = MODEL_DIR / "generator_metadata_v5.json"
 DEFAULT_OUTPUT_DIR = DATA_DIR / "multi_station"
 DEFAULT_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 DEFAULT_TOPIC = os.getenv("KAFKA_MULTI_TOPIC", "hydraulic.sensor.multi.raw")
+DEFAULT_DRIFT_CONTROL_FILE = PROJECT_ROOT / "kafka" / "run" / "drift_control.json"
+DEFAULT_DRIFT_STATUS_FILE = PROJECT_ROOT / "kafka" / "run" / "drift_status.json"
 TRAIN_RATIO = 0.8
 
 
@@ -68,6 +85,48 @@ def parse_args() -> argparse.Namespace:
         help="Cycle count; zero runs until interrupted",
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--drift-mode", choices=DRIFT_MODES, default="off")
+    parser.add_argument(
+        "--drift-min-offset",
+        "--drift-temp-min-offset",
+        dest="drift_min_offset",
+        type=float,
+        default=TEMP_MIN_OFFSET,
+    )
+    parser.add_argument(
+        "--drift-max-offset",
+        "--drift-temp-max-offset",
+        dest="drift_max_offset",
+        type=float,
+        default=TEMP_MAX_OFFSET,
+    )
+    parser.add_argument(
+        "--drift-pressure-min-percent",
+        type=float,
+        default=PRESSURE_MIN_PERCENT,
+    )
+    parser.add_argument(
+        "--drift-pressure-max-percent",
+        type=float,
+        default=PRESSURE_MAX_PERCENT,
+    )
+    parser.add_argument("--drift-step-per-sec", type=float, default=0.1)
+    parser.add_argument(
+        "--drift-min-duration-sec", type=float, default=DRIFT_MIN_DURATION_SEC
+    )
+    parser.add_argument(
+        "--drift-max-duration-sec", type=float, default=DRIFT_MAX_DURATION_SEC
+    )
+    parser.add_argument("--drift-max-hold-sec", type=float, default=30.0)
+    parser.add_argument("--drift-auto-normal-min-sec", type=float, default=120.0)
+    parser.add_argument("--drift-auto-normal-max-sec", type=float, default=240.0)
+    parser.add_argument("--drift-seed", type=int, default=0)
+    parser.add_argument(
+        "--drift-control-file", type=Path, default=DEFAULT_DRIFT_CONTROL_FILE
+    )
+    parser.add_argument(
+        "--drift-status-file", type=Path, default=DEFAULT_DRIFT_STATUS_FILE
+    )
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args()
 
@@ -349,6 +408,19 @@ def main() -> None:
         raise ValueError("--interval must be greater than zero")
     if args.seconds < 0:
         raise ValueError("--seconds cannot be negative")
+    drift_config = DriftConfig(
+        min_offset=args.drift_min_offset,
+        max_offset=args.drift_max_offset,
+        pressure_min_percent=args.drift_pressure_min_percent,
+        pressure_max_percent=args.drift_pressure_max_percent,
+        min_duration_sec=args.drift_min_duration_sec,
+        max_duration_sec=args.drift_max_duration_sec,
+        step_per_sec=args.drift_step_per_sec,
+        max_hold_sec=args.drift_max_hold_sec,
+        auto_normal_min_sec=args.drift_auto_normal_min_sec,
+        auto_normal_max_sec=args.drift_auto_normal_max_sec,
+        seed=args.drift_seed,
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     load_start = time.monotonic()
@@ -386,6 +458,14 @@ def main() -> None:
     raw_sensor_values = raw_data.reshape(-1, SENSOR_COUNT)
     raw_sensor_min = raw_sensor_values.min(axis=0).astype(np.float64)
     raw_sensor_max = raw_sensor_values.max(axis=0).astype(np.float64)
+    drift_injector = DriftInjector(
+        EQUIPMENT_IDS,
+        sensor_names,
+        drift_config,
+        mode=args.drift_mode,
+        control_path=args.drift_control_file,
+        status_path=args.drift_status_file,
+    )
 
     print("=" * 86)
     print("HydroTwin V5 Multi-Station Virtual Factory")
@@ -396,7 +476,34 @@ def main() -> None:
     print(f"Seed records         : {DEFAULT_SEED_RECORDS}")
     print(f"Validated profiles   : {[seed.profile for seed in seeds]}")
     print(f"Interval / seconds   : {args.interval:.3f} / {args.seconds or 'unlimited'}")
-    print("Mode                 : NORMAL only; no drift; predict only")
+    print(f"Drift mode           : {args.drift_mode}")
+    print(
+        "Drift temp target     : "
+        f"{drift_config.min_offset:g}..{drift_config.max_offset:g}"
+    )
+    print(
+        "Drift event duration  : "
+        f"{drift_config.min_duration_sec:g}.."
+        f"{drift_config.max_duration_sec:g}s"
+    )
+    print(
+        "Drift phase ratio/cap : "
+        f"{RISING_DURATION_RATIO:.0%}/"
+        f"{MAX_HOLD_DURATION_RATIO:.0%}/"
+        f"{FALLING_DURATION_RATIO:.0%} / "
+        f"hold<={drift_config.max_hold_sec:g}s"
+    )
+    print(
+        "Drift pressure percent: "
+        f"{drift_config.pressure_min_percent:g}.."
+        f"{drift_config.pressure_max_percent:g}%"
+    )
+    print(
+        "Drift auto wait/seed : "
+        f"{drift_config.auto_normal_min_sec:g}.."
+        f"{drift_config.auto_normal_max_sec:g}s / {drift_config.seed}"
+    )
+    print(f"Drift control/status : {args.drift_control_file} / {args.drift_status_file}")
     print(f"Seed statistics      : {seed_path}", flush=True)
 
     rows = []
@@ -421,10 +528,22 @@ def main() -> None:
                 phases[equipment_id].append(runtimes[equipment_id].cycle_position)
             assert_station_values_differ(station_values)
 
-            for equipment_id in EQUIPMENT_IDS:
-                values = clip_for_six_decimal_raw_range(
+            kafka_values = {
+                equipment_id: clip_for_six_decimal_raw_range(
                     station_values[equipment_id], raw_sensor_min, raw_sensor_max
                 )
+                for equipment_id in EQUIPMENT_IDS
+            }
+            kafka_values = drift_injector.process_cycle(
+                kafka_values,
+                now=cycle_start,
+                warning_handler=lambda message: print(
+                    f"[DRIFT] {message}", flush=True
+                ),
+            )
+
+            for equipment_id in EQUIPMENT_IDS:
+                values = kafka_values[equipment_id]
                 message = create_multi_raw_message(
                     equipment_id, timestamp, sensor_names, values
                 )
@@ -432,9 +551,19 @@ def main() -> None:
                 serialized_values = np.asarray(
                     list(message["sensors"].values()), dtype=np.float64
                 )
+                range_indexes = (
+                    range(SENSOR_COUNT)
+                    if args.drift_mode == "off"
+                    else (
+                        index
+                        for index, sensor in enumerate(sensor_names)
+                        if sensor not in DRIFT_SENSORS
+                    )
+                )
+                range_indexes = list(range_indexes)
                 if not (
-                    (serialized_values >= raw_sensor_min)
-                    & (serialized_values <= raw_sensor_max)
+                    (serialized_values[range_indexes] >= raw_sensor_min[range_indexes])
+                    & (serialized_values[range_indexes] <= raw_sensor_max[range_indexes])
                 ).all():
                     raise ValueError(f"{equipment_id} exceeds UCI Raw range")
                 metadata = producer.send(args.topic, value=message).get(timeout=10)
@@ -460,8 +589,9 @@ def main() -> None:
                 )
             if not args.quiet:
                 summary = " ".join(
-                    f"{station}=PS1:{station_values[station][0]:.3f},"
-                    f"TS1:{station_values[station][9]:.3f}"
+                    f"{station}=PS1:{kafka_values[station][0]:.3f},"
+                    f"TS1:{kafka_values[station][9]:.3f},"
+                    f"drift:{drift_injector.controllers[station].current_offset:.3f}"
                     for station in EQUIPMENT_IDS
                 )
                 print(
