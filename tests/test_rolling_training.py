@@ -91,9 +91,11 @@ def test_monitor_excludes_changed_operating_context(tmp_path,monkeypatch):
     messages = []
     for second in range(1,244):
         excluded = 182 <= second <= 241
-        messages.append(SimpleNamespace(value={'event_id':second,'run_id':'test','timestamp':now(),
-            'segment_id':1 if excluded else (2 if second>=242 else 0),
-            'reference_context':not excluded,'sensors':dict.fromkeys(monitor.SEASONAL,10.)}))
+        for equipment in monitor.EQUIPMENT_IDS:
+            messages.append(SimpleNamespace(value={'equipment_id':equipment,
+                'event_id':second,'run_id':'test','timestamp':now(),
+                'segment_id':1 if excluded else (2 if second>=242 else 0),
+                'reference_context':not excluded,'sensors':dict.fromkeys(monitor.SEASONAL,10.)}))
     monkeypatch.setattr(monitor,'STATE_DIR',tmp_path)
     monkeypatch.setattr(monitor,'consumer',lambda group:iter(messages))
     monkeypatch.setattr(monitor,'read_state',lambda name:states.get(name,{}))
@@ -101,8 +103,41 @@ def test_monitor_excludes_changed_operating_context(tmp_path,monkeypatch):
     monkeypatch.setattr(monitor,'RollingDriftDetector',Detector)
     monkeypatch.setattr(monitor,'trigger',lambda:pytest.fail('제외 구간은 새 학습을 요청하면 안 됨'))
     monitor.main()
-    assert len(updates)==63
+    assert len(updates)==63*3
     excluded_states = [s for s in history if s['status']=='condition_excluded']
-    assert len(excluded_states)==60
-    assert all(not s['drift_detected'] and not s['sensor_scores'] for s in excluded_states)
+    assert excluded_states
+    assert all(not s['drift_detected'] for s in excluded_states)
+    assert set(history[-1]['equipment_ids'])==set(monitor.EQUIPMENT_IDS)
     assert resets and 'retrain_request.json' not in states
+
+
+def test_monitor_requests_retraining_only_after_all_three_confirm(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    from src.runtime import monitor
+    from src.runtime.common import now
+    files={}
+    class Detector:
+        def __init__(self,reference,config): self.reference=reference
+        def reset(self): pass
+        def update(self,sensors,timestamp):
+            scores={sensor:{'mean_offset':1.0,'affected':True} for sensor in monitor.SEASONAL}
+            return {'status':'drift','drift_detected':True,'candidate_detected':True,
+                    'sensor_scores':scores,'affected_sensors':list(monitor.SEASONAL)}
+    messages=[]
+    for second in range(1,241):
+        for equipment in monitor.EQUIPMENT_IDS:
+            messages.append(SimpleNamespace(value={'equipment_id':equipment,'event_id':second,
+                'run_id':'three-run','timestamp':now(),'segment_id':0,'reference_context':True,
+                'sensors':dict.fromkeys(monitor.SEASONAL,10.)}))
+    monkeypatch.setattr(monitor,'STATE_DIR',tmp_path)
+    monkeypatch.setattr(monitor,'consumer',lambda group:iter(messages))
+    monkeypatch.setattr(monitor,'read_state',lambda name:files.get(name,{}))
+    monkeypatch.setattr(monitor,'write_state',lambda name,value:files.__setitem__(name,value))
+    monkeypatch.setattr(monitor,'RollingDriftDetector',Detector)
+    monkeypatch.setattr(monitor,'trigger',lambda:17)
+    monitor.main()
+    request=files['retrain_request.json']
+    assert request['run_id']=='three-run'
+    assert set(request['equipment_ids'])==set(monitor.EQUIPMENT_IDS)
+    assert request['confirmation']=='all_three_equipment'
+    assert files['retraining.json']['jenkins_queue']==17

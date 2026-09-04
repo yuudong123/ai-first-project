@@ -36,10 +36,7 @@ def main():
     mode = sys.argv[1] if len(sys.argv)>1 else ''
     if mode == 'inference':
         validate_inference()
-        module = os.getenv('HYDROTWIN_INFERENCE_MODULE','src.runtime.multi_inference')
-        if module not in ('src.runtime.multi_inference','src.runtime.inference'):
-            raise ValueError('지원하지 않는 추론 실행 모드입니다.')
-        command = [sys.executable, '-m', module]
+        command = [sys.executable, str(Path(__file__).resolve().parents[2]/'kafka/consumer.py')]
     elif mode == 'api':
         validate_api()
         command = [sys.executable, '-m', 'uvicorn', 'api.main:app', '--host', '0.0.0.0', '--port', '8000']

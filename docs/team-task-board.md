@@ -49,7 +49,7 @@ Unity는 Kafka에 직접 연결하지 않는다. Kafka를 소비하는 백엔드
 | 조현재 | Unity 3D·WebGL, 인터페이스 결정, 전체 통합 | `unity/`, `docs/contracts/` |
 | 홍유나 | 데이터·EDA·특징 추출, 모델·평가·SHAP | `src/data/`, `src/features/`, `src/model/`, `docs/data/`, `docs/model/` |
 | 박민 | Kafka 응용 코드, FastAPI, 웹 UI | `src/streaming/`, `src/api/`, `web/`, `docs/api/` |
-| 신종건 | Docker·Kafka 실행환경, pytest 통합, Jenkins·MLflow | `infra/`, `tests/integration/`, `docker-compose.yml`, `Jenkinsfile` |
+| 신종건 | Docker·Kafka 실행환경, pytest 통합, Jenkins·MLflow | `Dockerfile`, `docker-compose.yml`, `Jenkinsfile`, `tests/` |
 
 공용 설정 파일을 수정할 때는 담당 브랜치에서 PR을 만들고 관련 담당자의 확인을 받는다. 데이터 원본, 생성 데이터, 모델 파일, MLflow 실행 결과와 Unity 빌드는 Git에 올리지 않는다.
 
@@ -175,8 +175,8 @@ Kafka 브로커와 Docker 환경은 신종건이 담당하고, 박민은 해당 
 
 1. mock JSON을 전송·출력하는 최소 Kafka Producer·Consumer를 만든다.
 2. Producer가 Test 사이클을 1초 간격으로 재생하도록 바꾼다.
-3. 메시지 Key는 `machine_id`로 지정해 한 설비의 순서를 유지한다.
-4. `hydraulic.sensor.raw` Consumer가 최근 10초 데이터를 메모리에 유지하게 한다.
+3. 메시지의 `equipment_id`는 `station-01`~`station-03`으로 고정하고 설비별 순서를 유지한다.
+4. `hydraulic.sensor.multi.raw` Consumer가 설비마다 독립적인 최근 10초 데이터를 유지하게 한다.
 5. 10초가 쌓이면 홍유나의 `predict()`를 호출하고 이후 1초마다 다시 예측한다.
 6. 결과를 `hydraulic.prediction.v1` Topic으로 전송한다.
 7. FastAPI가 최신 예측을 읽어 `/health`와 `/api/v1/state/latest`로 제공하게 한다.
@@ -237,8 +237,6 @@ docs/api/api-contract.md
 ### 결과물
 
 ```text
-infra/kafka/
-infra/mlflow/
 tests/integration/
 Dockerfile
 docker-compose.yml
@@ -271,7 +269,7 @@ docs/operations/runbook.md
 | `hydraulic.telemetry.v1` | Test 데이터 재생 Producer | 추론 Consumer | 1초 단위 센서 이벤트 |
 | `hydraulic.prediction.v1` | 추론 Consumer | FastAPI 상태 저장기 | 부품별 예측과 영향 센서 |
 
-교육용 단일 설비 시연은 Topic당 Partition 1개로 시작한다. 데이터 흐름이 확인된 뒤에만 Partition 수를 늘린다.
+교육용 설비 3대 시연은 하나의 멀티 설비 Topic에서 시작하고 `equipment_id`로 상태와 추론 버퍼를 분리한다.
 
 ### 센서 이벤트 예시
 
@@ -345,7 +343,7 @@ Endpoint: `GET /api/v1/state/latest`
 | 조현재 Unity | `feat/unity-digital-twin` |
 | 홍유나 데이터·AI | `feat/data-model` |
 | 박민 스트리밍·API·웹 | `feat/streaming-api-web` |
-| 신종건 인프라·MLOps | `infra/mlops` |
+| 신종건 인프라·MLOps | `feat/infra-mlops` |
 
 공통 규칙:
 

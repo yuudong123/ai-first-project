@@ -7,6 +7,18 @@ from src.runtime.scenario import ScenarioConfig, RandomSeason
 from src import hydrotwin_pipeline as p
 
 
+def three_equipment_payload(run_id='current-run'):
+    from src.runtime.common import now
+    states=[]
+    for index,equipment in enumerate(('station-01','station-02','station-03')):
+        states.append({'equipment_id':equipment,'event_id':1,'cycle_id':1,'elapsed_sec':10,
+            'run_id':run_id,'updated_at':now(),'generated_at':now(),'received_at':now(),
+            'sensors':dict.fromkeys(p.SENSOR_NAMES,float(index+1)),'model_version':'v-test',
+            'prediction':{'status':'ready','observed_window_sec':10,'stable_flag':0,'components':{}}})
+    return {**states[0],'event_id':3,'source':'multi','equipment_states':states,
+            'expected_equipment_ids':['station-01','station-02','station-03']}
+
+
 def test_random_season_stays_bounded_and_intervals_are_valid():
     season = RandomSeason(ScenarioConfig(), seed=7)
     starts = []
@@ -79,14 +91,11 @@ def test_api_preserves_monitoring_and_unity_fields(tmp_path,monkeypatch):
     import json
     from fastapi.testclient import TestClient
     from api import main
-    from src.runtime.common import now
     path = tmp_path/'latest.json'
     monkeypatch.setattr(main,'LATEST_RAW_PATH',path)
     client = TestClient(main.app)
     assert client.get('/api/v1/state/latest').status_code==503
-    path.write_text(json.dumps({'event_id':1,'cycle_id':1,'elapsed_sec':10,'updated_at':now(),
-        'sensors':dict.fromkeys(p.SENSOR_NAMES,1.),'model_version':'v-test',
-        'prediction':{'status':'ready','observed_window_sec':10,'stable_flag':0,'components':{}}}))
+    path.write_text(json.dumps(three_equipment_payload()))
     result = client.get('/api/v1/state/latest').json()
     assert result['prediction']['stable_flag']==0
     assert result['model_version']=='v-test'
@@ -96,12 +105,9 @@ def test_previous_run_retraining_is_not_shown_as_current(tmp_path,monkeypatch):
     import json
     from fastapi.testclient import TestClient
     from api import main
-    from src.runtime.common import now
     path = tmp_path/'latest.json'
-    path.write_text(json.dumps({'event_id':1,'cycle_id':1,'elapsed_sec':1,'run_id':'new-run',
-        'updated_at':now(),'sensors':{},'prediction':{'status':'warming_up','observed_window_sec':1,'components':{}}}))
+    path.write_text(json.dumps(three_equipment_payload('new-run')))
     monkeypatch.setattr(main,'LATEST_RAW_PATH',path)
-    monkeypatch.setenv('HYDROTWIN_RUNTIME','1')
     files = {'retraining.json':{'status':'rejected'},'retrain_request.json':{'run_id':'old-run'}}
     monkeypatch.setattr(main,'read_state',lambda name: files.get(name,{}))
     result = TestClient(main.app).get('/api/v1/state/latest').json()

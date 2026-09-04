@@ -4,7 +4,7 @@ import numpy as np
 
 
 class SeedSchedule:
-    def __init__(self, profile, initial_seconds=120, segment_seconds=60, seed=None):
+    def __init__(self, profile, initial_seconds=120, segment_seconds=60, seed=None, reference_seed=None):
         profile = np.asarray(profile)
         if profile.ndim != 2 or profile.shape[1] != 5 or segment_seconds < 10 or initial_seconds < 120:
             raise ValueError('5개 프로필 라벨, 120초 이상 기준 구간, 10초 이상 시나리오 구간이 필요합니다.')
@@ -12,7 +12,9 @@ class SeedSchedule:
         unstable = np.flatnonzero(profile[:,4] == 1)
         if len(stable)==0 or len(unstable)==0:
             raise ValueError('안정 기준 시계열과 불안정 초기 시계열이 모두 필요합니다.')
-        self.reference_seed = int(stable[0])
+        if reference_seed is not None and reference_seed not in stable:
+            raise ValueError('기준 초기값은 부품 4개 정상 및 안정 상태여야 합니다.')
+        self.reference_seed = int(stable[0] if reference_seed is None else reference_seed)
         self.unstable_pool = [int(i) for i in unstable]
         self.random = random.Random(seed)
         self.initial_seconds = initial_seconds

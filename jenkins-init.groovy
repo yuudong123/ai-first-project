@@ -6,7 +6,7 @@ import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition
 import hudson.model.ParametersDefinitionProperty
 import hudson.model.ChoiceParameterDefinition
 
-// 로컬 시연용 계정과 파이프라인을 구성한다. 비밀번호는 Git 밖의 환경변수로 받는다.
+// Jenkins 이미지 시작 시 로컬 시연 계정과 파이프라인을 구성한다.
 def server = Jenkins.get()
 def realm = new HudsonPrivateSecurityRealm(false)
 realm.createAccount(System.getenv('JENKINS_ADMIN_USER'), System.getenv('JENKINS_ADMIN_PASSWORD'))

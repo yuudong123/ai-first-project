@@ -2,15 +2,14 @@
 api/main.py
 ===========
 Docker 통합 실행: Kafka → 10초 추론 → 파일 → 이 API → 웹/Unity.
-HYDROTWIN_RUNTIME=1이면 드리프트·재학습·시나리오 상태도 함께 제공한다.
-해당 환경변수가 없으면 기존 Raw Consumer 파일 읽기 방식과 호환된다.
+설비 3대의 드리프트·재학습·시나리오 상태도 함께 제공한다.
 
 엔드포인트:
     GET /health                 : 서버 상태 + 마지막 데이터 수신 후 경과 시간
     GET /api/v1/state/latest    : 최신 센서값 + 예측 상태 (통일된 API 계약)
 
 사전 준비:
-    python kafka/consumer_v5.py   (Raw Consumer, kafka/latest_raw.json 생성)
+    python kafka/consumer.py   (설비별 10초 추론 컨슈머)
 
 실행:
     uvicorn api.main:app --reload --port 8000
@@ -31,11 +30,7 @@ from src.runtime.common import read_state
 from src.monitoring.sensor_bands import load_sensor_bands
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-LATEST_RAW_PATH = BASE_DIR / "kafka" / "latest_raw.json"
-if os.getenv('HYDROTWIN_RUNTIME') == '1':
-    LATEST_RAW_PATH = BASE_DIR / 'artifacts/runtime/latest.json'
-if os.getenv('HYDROTWIN_REMOTE') == '1':
-    LATEST_RAW_PATH = BASE_DIR / 'artifacts/runtime/remote_latest.json'
+LATEST_RAW_PATH = BASE_DIR / 'artifacts/runtime/latest.json'
 
 START_TIME = time.time()
 STALE_THRESHOLD_SEC = 5  # 1초 간격 스트림이므로, 5초 이상 안 들어오면 "지연"으로 간주
@@ -91,9 +86,12 @@ def get_health():
     age = None
     connected = False
     if data:
-        updated_at = datetime.fromisoformat(data["updated_at"])
-        age = (datetime.now(timezone.utc) - updated_at).total_seconds()
-        connected = age < STALE_THRESHOLD_SEC
+        states = data.get('equipment_states',[])
+        if {state.get('equipment_id') for state in states} == {'station-01','station-02','station-03'}:
+            ages = [(datetime.now(timezone.utc)-datetime.fromisoformat(state['generated_at'])).total_seconds()
+                    for state in states]
+            age = max(ages)
+            connected = all(value < STALE_THRESHOLD_SEC for value in ages)
 
     return HealthResponse(
         status="ok",
@@ -116,27 +114,27 @@ def get_state_latest():
             status_code=503,
             detail="아직 센서 데이터를 받지 못했습니다. 현재 실행 모드의 추론 컨슈머와 Kafka 연결을 확인하세요.",
         )
-    if data.get('source') == 'remote_multi':
-        # 한 설비가 멈춰도 다른 설비의 신선한 시각으로 덮어쓰지 않는다.
-        for state in data.get('equipment_states',[]):
-            stamp = datetime.fromisoformat(state['generated_at'])
-            if (datetime.now(timezone.utc)-stamp).total_seconds() > STALE_THRESHOLD_SEC:
-                state['prediction'] = {'status':'stale','observed_window_sec':0,'components':{}}
-            if state.get('equipment_id') == data.get('equipment_id'):
-                data['prediction'] = state['prediction']
-        data['monitoring'] = {'drift':{'status':'disabled'},'retraining':{'status':'disabled'},
-            'message':'원격 설비별 수신·추론 모드: 자동 재학습 연결 안 함'}
-    elif os.getenv('HYDROTWIN_RUNTIME') == '1':
-        retraining = read_state('retraining.json')
-        request = read_state('retrain_request.json')
-        # 이전 생성기 실행의 재학습 결과를 이번 실행의 상태처럼 표시하지 않는다.
-        if request.get('run_id') != data.get('run_id'):
-            retraining = {'status':'idle','message':'현재 실행의 재학습 요청 대기 · 이전 기록은 파일에 보존됨'}
-        data['monitoring'] = {
-            'drift':read_state('monitor.json'),
-            'retraining':retraining,
-            'scenario':read_state('scenario.json'),
-        }
+    states = data.get('equipment_states')
+    if not isinstance(states,list) or {state.get('equipment_id') for state in states} != {
+        'station-01','station-02','station-03'}:
+        raise HTTPException(status_code=503,detail='설비 3대의 상태가 모두 준비되지 않았습니다.')
+    # 한 설비가 멈춰도 다른 설비의 신선한 시각으로 덮어쓰지 않는다.
+    for state in states:
+        stamp = datetime.fromisoformat(state['generated_at'])
+        if (datetime.now(timezone.utc)-stamp).total_seconds() > STALE_THRESHOLD_SEC:
+            state['prediction'] = {'status':'stale','observed_window_sec':0,'components':{}}
+        if state.get('equipment_id') == data.get('equipment_id'):
+            data['prediction'] = state['prediction']
+    retraining = read_state('retraining.json')
+    request = read_state('retrain_request.json')
+    # 이전 생성기 실행의 재학습 결과를 이번 실행의 상태처럼 표시하지 않는다.
+    if request.get('run_id') != data.get('run_id'):
+        retraining = {'status':'idle','message':'현재 실행의 재학습 요청 대기 · 이전 기록은 파일에 보존됨'}
+    data['monitoring'] = {
+        'drift':read_state('monitor.json'),
+        'retraining':retraining,
+        'scenario':read_state('scenario.json'),
+    }
     return StateLatestResponse(**data)
 
 

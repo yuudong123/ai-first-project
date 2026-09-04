@@ -646,8 +646,7 @@ let lastPayload = null;   // 설비를 바꿨을 때 즉시 다시 그리기 위
 /**
  * API 응답에서 현재 선택된 설비의 데이터만 골라낸다.
  * - equipment_states 배열이 오면 selectedEquipmentId와 일치하는 항목을 사용
- * - 그런 배열이 없으면(현재 상태) 설비 구분 없는 단일 데이터를 그대로 사용
- *   -> V5가 나중에 설비별 데이터를 보내기 시작해도 코드 수정 없이 동작
+ * - 설비 배열이 없으면 다른 설비 값으로 대체하지 않고 대기 상태를 사용
  */
 function pickEquipmentData(payload){
   return EquipmentState.select(payload,selectedEquipmentId);

@@ -13,13 +13,14 @@ TCP 연결은 되는데 메시지를 못 받을 때, 어느 단계에서 막히�
     python kafka/diagnose.py
 """
 
+import json
 import os
 
 from kafka import KafkaConsumer, KafkaAdminClient
 from kafka.errors import KafkaError
 
-BROKER = os.environ.get("KAFKA_BROKER", "192.168.133.108:9092")
-TOPIC = os.environ.get("KAFKA_TOPIC", "hydraulic.sensor.raw")
+BROKER = os.environ.get("KAFKA_BROKER", "localhost:9092")
+TOPIC = os.environ.get("KAFKA_TOPIC", "hydraulic.sensor.multi.raw")
 
 
 def main():
@@ -63,32 +64,36 @@ def main():
     print(f"\n[3] '{TOPIC}' 파티션: {partitions}")
     consumer.close()
 
-    # 4) earliest부터 읽었을 때 메시지가 있는지 (5초만 대기)
-    print(f"\n[4] earliest(맨 처음)부터 메시지 존재 여부 확인 (5초 대기)...")
+    # 4) 지금 들어오는 메시지에 설비 3대가 모두 있는지 확인한다.
+    print(f"\n[4] 최신 메시지에서 설비 3대 확인 (5초 대기)...")
     consumer = KafkaConsumer(
         TOPIC,
         bootstrap_servers=BROKER,
-        auto_offset_reset="earliest",
+        auto_offset_reset="latest",
         consumer_timeout_ms=5000,
-        client_id="diagnose-earliest",
-        group_id=None,  # group 없이 = 매번 새로 처음부터 읽기
+        client_id="diagnose-three-equipment",
+        group_id=None,
+        value_deserializer=lambda value:json.loads(value.decode('utf-8')),
     )
     count = 0
+    equipment_ids = set()
     for message in consumer:
         count += 1
+        equipment_ids.add(message.value.get('equipment_id'))
         if count == 1:
             print(f"    첫 메시지 확인됨 (offset={message.offset}, partition={message.partition})")
-            print(f"    내용 미리보기: {message.value[:200]}")
-        if count >= 5:
+            print(f"    내용 미리보기: {str(message.value)[:200]}")
+        if count >= 9 and equipment_ids == {'station-01','station-02','station-03'}:
             break
     consumer.close()
 
-    print(f"\n    총 {count}개 메시지 확인됨 (5초 안에 5개까지만 셈)")
+    print(f"\n    총 {count}개 메시지, 설비 ID={sorted(str(value) for value in equipment_ids)}")
     if count == 0:
-        print("    -> 토픽은 있지만 메시지가 하나도 없는 상태입니다. V5 쪽에서 실제로 발행 중인지 확인 필요.")
+        print("    -> 토픽은 있지만 메시지가 없습니다. 3설비 생성기를 확인하세요.")
+    elif equipment_ids != {'station-01','station-02','station-03'}:
+        print("    -> 설비 3대 중 누락이 있습니다.")
     else:
-        print("    -> 토픽에 메시지가 있습니다. test_interval.py에서 group_id 충돌이나")
-        print("       auto_offset_reset='latest' 때문에 새 메시지를 놓쳤을 가능성이 있습니다.")
+        print("    -> 설비 3대 메시지가 모두 들어옵니다.")
 
 
 if __name__ == "__main__":

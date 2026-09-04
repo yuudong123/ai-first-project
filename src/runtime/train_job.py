@@ -1,4 +1,4 @@
-"""Jenkins에서 실행하는 단일 재학습 작업. 성능 검증 후 안전하게 모델을 교체한다."""
+"""Jenkins에서 설비 3대가 확인한 드리프트의 공통 모델을 안전하게 재학습한다."""
 import argparse
 import json
 import os
@@ -27,6 +27,9 @@ def main():
         if not request or status.get('request_id')!=request['request_id'] or status.get('status')!='queued':
             print('실행할 새 재학습 요청이 없습니다.',flush=True)
             return
+        expected_equipment = {'station-01','station-02','station-03'}
+        if set(request.get('equipment_ids',[])) != expected_equipment or request.get('confirmation')!='all_three_equipment':
+            raise RuntimeError('설비 3대가 함께 확인한 드리프트 요청만 재학습할 수 있습니다.')
         status = {**status,'status':'running','updated_at':now()}
         write_state('retraining.json',status)
         try:
@@ -51,13 +54,20 @@ def main():
                 sample = read_state('latest.json')
                 if not sample or sample.get('run_id')!=request['run_id']:
                     raise RuntimeError('학습 중 생성기 실행이 바뀌어 배포를 중단했습니다.')
-                rows = [[sample['sensors'][s] for s in p.SENSOR_NAMES]]*10
-                diagnose(p.load_model_bundle(report['candidate_path']),rows)
+                equipment_states = sample.get('equipment_states',[])
+                if {item.get('equipment_id') for item in equipment_states} != expected_equipment:
+                    raise RuntimeError('후보 모델 검사에 필요한 설비 3대의 최신값이 없습니다.')
+                candidate_bundle = p.load_model_bundle(report['candidate_path'])
+                for item in equipment_states:
+                    rows = [[item['sensors'][sensor] for sensor in p.SENSOR_NAMES]]*10
+                    diagnose(candidate_bundle,rows)
                 backup = promote_candidate(Path(report['candidate_path']),config.production_model_path)
                 expected = str(config.production_model_path.stat().st_mtime_ns)
                 deadline = time.monotonic()+30
                 while time.monotonic()<deadline:
-                    if read_state('latest.json').get('model_version')==expected:
+                    current_state = read_state('latest.json')
+                    versions = {item.get('model_version') for item in current_state.get('equipment_states',[])}
+                    if current_state.get('model_version')==expected and versions=={expected}:
                         outcome = 'promoted'
                         break
                     time.sleep(1)

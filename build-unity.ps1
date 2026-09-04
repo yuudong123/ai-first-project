@@ -3,7 +3,7 @@ param(
     [string]$OutputPath = 'D:\ai-first-project\artifacts\unity\ai-labels\pro-build'
 )
 $ErrorActionPreference = 'Stop'
-# 로컬 프로젝트에 기록된 버전으로만 빌드하며 생성물은 D드라이브에 둔다.
+# 루트에서 실행하며 로컬 프로젝트에 기록된 버전으로만 빌드한다.
 $versionLine = Get-Content -LiteralPath (Join-Path $ProjectPath 'ProjectSettings\ProjectVersion.txt') |
     Where-Object { $_ -match '^m_EditorVersion: ' } | Select-Object -First 1
 $version = ($versionLine -replace '^m_EditorVersion: ', '').Trim()

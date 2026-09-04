@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STATE_DIR = ROOT / 'artifacts' / 'runtime'
 SENSORS = ('PS1','PS2','PS3','PS4','PS5','PS6','EPS1','FS1','FS2','TS1','TS2','TS3','TS4','VS1','CE','CP','SE')
-BROKER = os.getenv('KAFKA_BROKER', 'kafka:9092')
-TOPIC = 'hydraulic.sensor.raw'
+BROKER = os.getenv('KAFKA_BROKER', 'kafka:29092')
+TOPIC = os.getenv('KAFKA_TOPIC', 'hydraulic.sensor.multi.raw')
 
 
 def now():

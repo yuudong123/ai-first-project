@@ -1,4 +1,5 @@
 """서버 배포 시 필수 모델과 Unity 자산 검증."""
+from pathlib import Path
 import pytest
 from src.runtime import server_entry
 from src import hydrotwin_pipeline as p
@@ -52,12 +53,10 @@ def test_api_does_not_hide_missing_reference_data(monkeypatch):
         server_entry.validate_api()
 
 
-@pytest.mark.parametrize('module',['src.runtime.multi_inference','src.runtime.inference'])
-def test_same_entry_supports_remote_and_local_inference(monkeypatch,module):
+def test_inference_entry_always_uses_three_equipment_consumer(monkeypatch):
     calls=[]
     monkeypatch.setattr(server_entry,'validate_inference',lambda:None)
-    monkeypatch.setenv('HYDROTWIN_INFERENCE_MODULE',module)
     monkeypatch.setattr(server_entry.sys,'argv',['entry','inference'])
     monkeypatch.setattr(server_entry.os,'execvp',lambda executable,args:calls.append(args))
     server_entry.main()
-    assert calls[0][-1]==module
+    assert 'kafka/consumer.py' in calls[0][-1].replace('\\','/')

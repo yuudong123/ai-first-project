@@ -2,7 +2,14 @@
 from datetime import datetime,timezone,timedelta
 import json
 import pytest
-from src.runtime.multi_inference import EquipmentInference,EQUIPMENT_IDS
+import importlib.util
+from pathlib import Path
+
+CONSUMER_PATH=Path(__file__).resolve().parents[1]/'kafka/consumer.py'
+SPEC=importlib.util.spec_from_file_location('hydrotwin_consumer',CONSUMER_PATH)
+CONSUMER=importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(CONSUMER)
+EquipmentInference,EQUIPMENT_IDS=CONSUMER.EquipmentInference,CONSUMER.EQUIPMENT_IDS
 from src.runtime.common import SENSORS
 
 
@@ -55,7 +62,7 @@ def test_unknown_missing_or_stale_data_is_rejected():
     assert not runtime.states
 
 
-def test_remote_api_preserves_ids_and_marks_only_stale_station(tmp_path,monkeypatch):
+def test_api_preserves_ids_and_marks_only_stale_station(tmp_path,monkeypatch):
     from api import main
     from fastapi.testclient import TestClient
     current=datetime.now(timezone.utc)
@@ -64,10 +71,42 @@ def test_remote_api_preserves_ids_and_marks_only_stale_station(tmp_path,monkeypa
         stamp=current-timedelta(seconds=20 if i==1 else 0)
         payload={'equipment_id':equipment,'timestamp':stamp.isoformat(),'sensors':dict.fromkeys(SENSORS,i+1)}
         result=runtime.update(payload,stamp)
-    path=tmp_path/'remote.json';path.write_text(json.dumps(result),encoding='utf-8')
+    path=tmp_path/'latest.json';path.write_text(json.dumps(result),encoding='utf-8')
     monkeypatch.setattr(main,'LATEST_RAW_PATH',path)
     data=TestClient(main.app).get('/api/v1/state/latest').json()
     assert [s['equipment_id'] for s in data['equipment_states']]==list(EQUIPMENT_IDS)
     assert [s['sensors']['PS1'] for s in data['equipment_states']]==[1,2,3]
     assert [s['prediction']['status'] for s in data['equipment_states']]==['warming_up','stale','warming_up']
-    assert data['monitoring']['retraining']['status']=='disabled'
+    assert data['monitoring']['retraining']['status']=='idle'
+
+
+@pytest.mark.parametrize('new_run,new_event,new_segment',[('a',11,1),('b',1,0),('a',12,0)])
+def test_source_transition_restart_or_event_gap_resets_only_its_equipment(new_run,new_event,new_segment):
+    runtime=engine()
+    for second in range(10):
+        for equipment in EQUIPMENT_IDS:
+            payload,stamp=message(equipment,second,10)
+            runtime.update({**payload,'run_id':'a','event_id':second+1,'segment_id':0},stamp)
+    payload,stamp=message('station-02',10,100)
+    runtime.update({**payload,'run_id':new_run,'event_id':new_event,'segment_id':new_segment},stamp)
+    assert [len(runtime.buffers[e]) for e in EQUIPMENT_IDS]==[10,1,10]
+    assert runtime.states['station-02']['prediction']['status']=='warming_up'
+    for second in range(11,20):
+        payload,stamp=message('station-02',second,100)
+        runtime.update({**payload,'run_id':new_run,'event_id':new_event+second-10,'segment_id':new_segment},stamp)
+    assert runtime.states['station-02']['prediction']['mean']==100
+
+
+def test_source_duplicate_is_ignored_even_with_new_timestamp():
+    runtime=engine()
+    for second in range(2):
+        payload,stamp=message('station-01',second,1)
+        runtime.update({**payload,'run_id':'a','event_id':1,'segment_id':0},stamp)
+    assert len(runtime.buffers['station-01'])==1
+
+
+def test_source_run_id_is_preserved_for_retraining_contract():
+    runtime=engine()
+    payload,stamp=message('station-01',0,1)
+    result=runtime.update({**payload,'run_id':'producer-run','event_id':1,'segment_id':0},stamp)
+    assert result['equipment_states'][0]['run_id']=='producer-run'

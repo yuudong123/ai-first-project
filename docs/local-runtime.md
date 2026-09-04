@@ -1,197 +1,129 @@
-# Docker 실행 및 로컬 전체 시연
+# 설비 3대 Docker 실행 가이드
 
-## 기본 실행: 기존 Kafka의 3대 수신·추론·웹
+## 실행 원칙
 
-기존 **`docker-compose.yml`과 `Dockerfile`만 사용**합니다. 별도 서버 Compose나 덮어쓰기 파일을 선택하지 않습니다.
-기본 `docker compose up`은 inference와 api만 실행합니다. Kafka·생성기·모니터·Jenkins는 로컬 시연용 `local` 프로필에 남겨 두었습니다.
-기존 동일 이름의 추론·API 컨테이너는 배포 시 교체됩니다. 공용 서버에서는 로컬 전환 스크립트 또는 `--remove-orphans`, `down -v`를 실행하지 않습니다.
+이 프로젝트는 모든 환경에서 `station-01`, `station-02`, `station-03` 세 대만 사용한다.
+단일 설비 생성·추론·화면 호환 경로는 없다. 세 설비는 같은 V5 모델을 공유하지만 생성 상태,
+10초 추론 버퍼, 최신 상태와 드리프트 기준은 서로 분리한다.
 
-서버의 기존 `.env`에 아래 값만 추가·수정합니다. 파일이 없다면 생성합니다. 기존 비밀번호나 다른 설정을 덮어쓰지 않습니다.
+## 최초 실행
+
+Docker Desktop을 실행하고 프로젝트 루트에서 다음을 실행한다.
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\start.ps1
+```
+
+`start.ps1`은 다음 순서로 동작한다.
+
+1. 애플리케이션과 Jenkins 이미지를 빌드한다.
+2. 원본 데이터를 1Hz로 전처리하고 10초 모델을 준비한다.
+3. 로컬 Kafka를 시작한다.
+4. `kafka/producer.py`가 매초 설비 3대의 메시지 세 개를 보낸다.
+5. `kafka/consumer.py`가 설비별 10개를 모아 각각 추론한다.
+6. 드리프트 감지기, Jenkins, API와 웹을 함께 실행한다.
+
+기존 이미지를 그대로 쓸 때만 다음을 사용한다.
+
+```powershell
+.\start.ps1 -SkipBuild
+```
+
+## 고정 데이터 계약
+
+- Topic: `hydraulic.sensor.multi.raw`
+- 설비 ID: `station-01`, `station-02`, `station-03`
+- 메시지: `equipment_id`, `timestamp`, 센서 17개, `run_id`, `event_id`, `segment_id`, `reference_context`
+- API: `GET /api/v1/state/latest`
+- 상태 파일: `artifacts/runtime/latest.json`
+
+API는 `equipment_states`에 세 설비가 모두 있어야 정상 응답한다. 설비가 누락됐을 때 다른
+설비의 값을 복제하지 않는다. 각 설비는 초기 10초 동안 `warming_up`이며 5초 이상 메시지가
+멈추면 해당 설비만 `stale`이 된다.
+
+## 생성 시나리오와 드리프트
+
+- 최초 120초: 설비마다 서로 다른 정상·안정 초기값
+- 이후: 안정 초기값 120초, 불안정 초기값 60초 반복
+- 온도: 세 설비에 공통으로 -4~+4°C 범위의 계절 offset
+- 압력: 세 설비의 각 기준 압력에서 -10~+10% 범위
+- 다음 드리프트: 이전 시작 후 무작위 60~1,200초
+- 이동 시간: 기본 30초
+
+초기 사이클 라벨과 주입 offset은 진단 기록일 뿐 생성값의 정답으로 사용하지 않는다.
+부품·안정 상태는 각 설비의 실제 생성값을 10초 모델에 넣은 결과만 화면에 표시한다.
+
+드리프트 감지기는 설비별 초기 기준과 이동 구간을 따로 유지한다. 같은 검사 시점에 세 설비가
+모두 드리프트를 확인하고 offset이 안정됐을 때만 중앙값 offset으로 공통 분류 모델의 재학습을
+요청한다. 불안정 초기값 구간은 계절 변화 학습에서 제외한다.
+
+## 설정
+
+`.env`의 주요 항목:
 
 ```dotenv
-KAFKA_BROKER=192.168.133.108:9092
-KAFKA_TOPIC=hydraulic.sensor.multi.raw
-UNITY_WEBGL_HOST_PATH=/srv/hydrotwin/assets/unity/pro-build
+JENKINS_ADMIN_USER=admin
+JENKINS_ADMIN_PASSWORD=직접_설정한_비밀번호
+TEMP_OFFSET_MIN=-4
+TEMP_OFFSET_MAX=4
+PRESSURE_OFFSET_PERCENT=10
+DRIFT_INTERVAL_MIN_SEC=60
+DRIFT_INTERVAL_MAX_SEC=1200
+DRIFT_RAMP_SEC=30
+INITIAL_NORMAL_SEC=120
+OPERATING_SEGMENT_SEC=60
+UNITY_WEBGL_HOST_PATH=D:/ai-first-project/artifacts/unity/ai-labels/pro-build
 WEB_BIND_ADDRESS=127.0.0.1
 WEB_PORT=8000
+KAFKA_BIND_ADDRESS=127.0.0.1
+KAFKA_ADVERTISED_HOST=localhost
 ```
 
-- 팀 내부망에서 직접 접속하려면 `WEB_BIND_ADDRESS`를 서버 내부망 IP로 설정하고 방화벽에서 팀 접속만 허용합니다. 인터넷 공개에는 인증·TLS가 별도로 필요합니다.
-- `UNITY_WEBGL_HOST_PATH`는 실제 Build 폴더의 부모 경로입니다. 이 PC는 `D:/ai-first-project/artifacts/unity/ai-labels/pro-build`입니다.
-- 모델·데이터는 기본적으로 저장소의 `models`, `data`를 사용합니다. 다른 위치면 `MODEL_HOST_DIR`, `DATA_HOST_DIR`을 설정합니다.
-- 상태 파일은 기본 `artifacts/runtime`에 저장합니다. 별도 위치는 `STATE_HOST_DIR`로 지정하며, 로컬 전체 시연에서는 기본 위치를 사용합니다.
-- Kafka의 advertised.listeners 주소도 컨테이너에서 접근 가능해야 합니다. 컨테이너 localhost는 서버 호스트가 아닙니다. 생성기와 서버 시간을 동기화합니다.
-- 기본 모델은 `models/predict/integrated_lgbm.joblib`: 센서별 10초 평균 17개, 부품 4개와 stable_flag를 예측합니다. 신뢰하는 팀 모델만 사용합니다.
-- 정상 밴드에 필요한 데이터는 `data/processed/simulator/uci_1hz_17sensors.npz`, `data/processed/split_ids_accumulator_stratified.json`, `data/raw/uci_hydraulic/extracted/profile.txt`입니다.
-- Unity 빌드는 `Build/pro-build.loader.js`, `pro-build.data.gz`, `pro-build.framework.js.gz`, `pro-build.wasm.gz`를 포함해야 합니다. StreamingAssets가 있으면 함께 복사합니다.
-- 모델·데이터·빌드는 Git에 없으므로 서버에 별도로 준비해야 합니다. 시작 시 모델 호환성·기준 데이터·Unity 파일 누락을 검사합니다.
+`.env`가 없으면 `start.ps1`이 비밀번호와 기본 시나리오 설정을 생성한다. 다른 PC가 Kafka를
+받아야 하는 개발 서버에서는 두 Kafka 값을 서버 내부망 IP로 바꾸고 Windows 방화벽의 TCP
+9092를 내부망에만 허용한다.
 
-```sh
-docker compose config --quiet
-docker compose up -d --build
+## 검증
+
+```powershell
 docker compose ps
-docker compose logs --tail 100 inference api
+docker compose logs --tail 100 producer inference monitor api jenkins
+docker exec hydrotwin-monitor python -m src.runtime.check
 ```
 
-10초 이상 연속 수신한 다음 확인합니다.
+연결 검사는 다음을 모두 확인한다.
 
-```sh
-docker compose exec inference python -m src.runtime.check
-```
+- 설비 ID 세 개가 정확히 존재함
+- 각 설비에 센서 17개가 존재함
+- 설비마다 최근 10초 추론이 `ready`임
+- 부품 네 개와 영향 센서가 존재함
 
-`/api/v1/state/latest`의 equipment_states에 3개 설비와 각각 ready 예측이 있어야 합니다. 웹에서 각 설비를 선택해 확인합니다.
-`/health`는 웹 생존 검사이므로 Kafka 연결 및 세 설비의 준비 상태는 위 연결 검사로 별도 확인합니다.
-모델·데이터·Unity는 읽기 전용으로 연결하고 코드 자체는 이미지에 포함하므로, 코드 변경 후 다시 빌드해야 합니다.
-이 모드는 멀티 설비 자동 재학습에 연결하지 않았으며 모델 교체 후에는 inference를 재시작해야 합니다.
-기존 루트 Jenkinsfile은 로컬 monitor 서비스에 의존하므로 멀티 설비 재학습용으로 사용하지 않습니다.
+웹은 `http://localhost:8000`, Jenkins는 `http://localhost:8080`에서 확인한다.
 
-기본 실행 서비스를 중지하려면 `docker compose stop inference api`를 사용합니다. 기존 Kafka·생성기를 건드리지 않습니다.
-복구하려면 이전 코드와 모델·자산을 복원해 다시 빌드합니다. 배포 전 기존 코드·모델을 보존하고, 저장된 과거 상태를 현재 정상 수신으로 오해하지 않도록 지연 표시를 확인합니다.
+## 모델 교체
 
-## 원격 Kafka의 3개 설비를 따로 표시하기
+재학습 후보는 기존 라벨 데이터에 감지된 계절 offset을 합성해 학습한다. 실시간 AI 예측을
+정답 라벨로 사용하지 않는다. 원본 환경과 계절 환경의 성능 기준을 모두 통과한 경우에만 운영
+모델을 교체한다. 추론 컨슈머는 모델 파일 변경을 감지해 새 모델을 읽고 세 설비 모두의 새
+모델 버전 반영을 확인한다.
 
-현재 원격 모드는 `192.168.133.108:9092`의 `hydraulic.sensor.multi.raw`를 사용한다. 루트에서 `powershell -ExecutionPolicy Bypass -File infra/start-remote.ps1`로 시작한다. 기존 Docker 이미지와 학습 모델이 준비된 PC용이다.
+## Unity 빌드
 
-- `station-01`, `station-02`, `station-03`의 17개 센서값을 **설비별로 별도 저장·10초 평균·AI 추론**한다. 모델은 같은 파일을 사용하지만 입력 버퍼와 결과는 섞지 않는다.
-- 원격 메시지의 `equipment_id`, 시간대가 있는 `timestamp`, `sensors`를 사용한다. 정상적인 1초 간격에서 벗어나거나 값이 누락되면 해당 설비의 연속 구간을 다시 수집한다. 중복·역순 메시지는 새 관측값으로 세지 않는다.
-- 저장 파일은 `artifacts/runtime/remote_latest.json`이다. 기존 `artifacts/runtime/latest.json` 및 모델/볼륨은 보존한다. API는 원격 모드에서 원격 파일을 사용하고, `equipment_states` 배열을 웹과 Unity에 전달한다. 최상위 센서 필드는 구형 API 호환용이며 멀티 화면은 사용하지 않는다.
-- 웹은 각 설비의 이벤트 번호·시각을 유지하여 그래프와 이탈 횟수를 따로 계산한다. 선택하지 않은 설비도 이력을 수집한다. 누락된 설비를 첫 설비 값으로 대체하지 않는다. 5초 넘게 지연된 설비의 예측은 `stale`로 표시한다.
-- Unity의 기존 설비 ID별 수신 기능을 사용한다. 재빌드 없이 기존 `ApplyWebState` 지원 빌드로 전달한다. 표시 숫자의 반올림 때문에 비슷한 값이 같아 보일 수 있으므로 API 원본 값과 구분한다.
-- 원격 모드 시작 시 로컬 producer와 monitor만 중지한다. 원격 데이터는 자동 재학습에 연결하지 않으며, 추론 모델은 실행 시작 시점 버전으로 고정한다. Jenkins는 보존되지만 monitor가 중지된 동안 기존 Jenkins 작업은 실행하지 않는다. 검사는 `docker exec hydrotwin-inference python -m src.runtime.check`를 사용한다.
-- 원격 producer에는 구간 전환 ID나 정답 라벨이 없다. 센서값만으로 전환 경계를 확정할 수 없으며, 원격 스트림 예측의 정답 성능은 이 연결 검사로 검증되지 않는다.
-- 기존 `kafka/consumer_v5.py`를 따로 실행할 필요가 없다. 원격 모드의 실제 컨슈머는 `src/runtime/multi_inference.py`이다. 원격 토픽에 쓰거나 다른 컨슈머의 오프셋을 커밋하지 않는다.
-
-로컬 전체 모드로 복귀하려면 다음 스크립트를 실행한다. 같은 Compose에서 로컬 프로필과 기존 단일 설비 추론·재학습 흐름을 선택한다.
+Unity는 Kafka에 직접 접속하지 않고 API의 설비 3대 응답을 받는다. 최신 WebGL 빌드에는
+`_App.ApplyWebState(string)` 진입점이 있어야 한다. 빌드 경로를 바꾼 뒤에는 API 컨테이너를
+다시 만들어 연결 경로를 갱신한다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File infra/start.ps1 -SkipBuild
+docker compose up -d --force-recreate api
 ```
 
-단순 `docker compose restart`는 실행 모드를 바꾸지 않는다. 로컬 전체 시연에서 원격 모드로 전환할 때는 새 PowerShell 프로세스로 `infra/start-remote.ps1`을 실행한다. 공용 서버에서는 위 기본 배포 명령만 사용한다.
-
-검증: Python 회귀 테스트 44개와 JavaScript 테스트 6개 통과. 원격 Kafka 원본과 API를 동일 시각으로 대조해 3대 모두 센서 17개의 값이 일치함을 확인했다. 예를 들어 2026-09-03 09:22:45 UTC의 PS1은 station-01=160.381617, station-02=159.715684, station-03=159.309819 bar였다. 모든 설비의 10초 예측·영향 센서 응답을 확인했고, Unity에서 station-03 선택 후 해당 설비의 이름표·웹 센서값 및 AI 진단 표시를 확인했다. Unity 소스·빌드는 변경하지 않았다.
-
-## 시작·중지
-
-PowerShell에서 프로젝트 루트로 이동한다.
+## 중지와 재시작
 
 ```powershell
-cd C:\ai-first-project
-.\infra\start.ps1
+docker compose stop
+.\start.ps1 -SkipBuild
 ```
 
-최초 실행은 이미지를 빌드하고 원본 데이터 전처리 및 10초 모델 학습을 수행한다. 이미 준비된 PC에서는 `-SkipBuild`를 붙인다. 기존 모델과 Docker 볼륨은 보존한다.
-
-- 웹·Unity: http://localhost:8000
-- API 문서: http://localhost:8000/docs
-- Jenkins: http://localhost:8080 (계정·비밀번호는 Git에서 제외된 `.env` 참고)
-- 중지: `docker compose stop`
-- 로컬 전체 모드 다시 실행: `powershell -ExecutionPolicy Bypass -File infra/start.ps1 -SkipBuild` (기본 `docker compose up -d`는 원격 3대 모드)
-- 로그: `docker compose logs -f --tail 50 producer inference monitor`
-- 연결 검사: `docker exec hydrotwin-monitor python -m src.runtime.check`
-- 테스트: `docker exec hydrotwin-monitor python -m pytest tests -q`
-
-`docker compose down -v`는 데이터 볼륨을 삭제하므로 일상적인 중지에 사용하지 않는다. 루트 Compose만 사용하고 예전 `kafka/docker-compose.yml`은 동시에 실행하지 않는다.
-
-## 로컬 저장 위치와 Unity 빌드
-
-프로젝트는 `C:\ai-first-project`에 유지한다. Docker 디스크 위치는 Docker Desktop의 Settings → Resources → Advanced에서 D드라이브로 이동한다. 이미지와 Jenkins/Kafka 볼륨이 담긴 디스크이므로 탐색기에서 실행 중인 파일을 임의로 옮기지 않는다.
-
-Unity 소스는 `D:\ai-first-project\unity`, AI 이름표를 적용한 빌드는 `D:\ai-first-project\artifacts\unity\ai-labels\pro-build`에 둔다. 이전 빌드는 상위 폴더의 `pro-build`에 보존했다. `infra/build-unity.ps1`로 해당 프로젝트에 기록된 에디터 버전으로 빌드한다. Compose의 API 서비스는 이 출력 폴더를 읽기 전용으로 연결한다. 다른 출력 위치는 `.env`의 `UNITY_WEBGL_HOST_PATH`로 설정한다. 빌드 완료 후 `docker compose restart api`로 새 빌드를 제공한다. 생성된 빌드는 Git에 올리지 않는다.
-
-웹의 Unity 호출은 `_App.ApplyWebState(string)`이다. Unity 소스의 `HydroTwinWebBridge`가 이 진입점을 제공해야 하며, 예전 `ApplyState`만 포함된 빌드는 사용할 수 없다. 이번 로컬 Unity 소스에는 웹 전용 진입점을 추가했고 빌드 성공을 확인했다. 다른 PC에서는 해당 Unity 소스 수정도 함께 적용한 뒤 빌드해야 한다.
-
-처음 D드라이브 출력 연결을 적용할 때는 `docker compose up -d --force-recreate api`로 컨테이너를 다시 만든다. 이후 같은 경로의 빌드만 갱신하면 API 재시작으로 충분하다. 예전 빌드가 브라우저에 캐시된 경우를 피하도록 웹은 빌드 버전과 데이터 캐시 비활성화를 적용한다.
-
-## Unity 이름표 색상
-
-이름표와 센서 외형은 원본 센서값의 분위수 범위가 아니라 `prediction.components`와 각 부품의 `top_sensors`로 색을 정한다. 4개 부품이 모두 정상이면 초록색, 이상 부품의 주요 영향 센서는 해당 부품의 `risk_level` 색으로 표시한다. 여러 이상 부품에 공통으로 등장하면 더 높은 위험 색을 사용한다. 이상 판단의 주요 영향 센서로 선정되지 않은 센서는 회색이며, 정상이라고 단정하지 않는다. 예측 대기·응답 누락·Unity 내부 합성 시연값도 회색이다.
-
-현재 백엔드는 정상은 초록색(`normal`), 이상은 주황색(`warning`)으로 전달한다. 향후 응답에 `caution`/`danger`가 있으면 노랑/빨강을 사용한다. 센서값이나 SHAP 크기로 위험 단계를 임의 생성하지 않는다. 이 색은 **부품 AI 판단과 영향 센서 표시**이며 센서 자체의 고장 진단은 아니다. 펼친 이름표에도 이 의미를 표시한다.
-
-## 실제 데이터 흐름
-
-```text
-학습된 V5 LSTM → Kafka hydraulic.sensor.raw (1초)
-  ├─ inference 그룹 → 최근 10초 센서별 평균 17개 → LightGBM 5개 → TreeSHAP
-  │   → FastAPI → 기존 웹 UI·Unity WebGL
-  └─ drift 그룹 → 초기 정상 기준 통계 → 60초 분포 이동 감지
-      → offset 안정성 확인 → Jenkins → 기존 라벨 + 계절 증강 재학습
-      → 원본/계절 환경 성능 게이트 → 후보 추론 검사 → 원자적 교체
-      → 추론기의 새 모델 수신 확인 → 실패하면 백업으로 복구
-```
-
-공개 UCI 데이터의 부품 상태 조기판별이며 실제 고장까지 남은 시간(RUL)을 예측하는 모델이 아니다. TreeSHAP은 모델 판단의 영향 센서를 설명하며 물리적 고장 원인의 증명은 아니다.
-
-현재 학습·재학습·평가는 각 60초 사이클의 모든 위치에서 10초 평균을 구성한다(0~9초부터 50~59초까지 1초 간격, 51개). 사이클 단위로 학습/검증/평가를 먼저 나누며 사이클 경계는 넘지 않는다. 학습+검증 1,874개 사이클에서 95,574개 구간을 학습하고, 별도 331개 사이클에서 16,881개 구간을 평가한다. 겹치는 구간은 독립 표본이 아니다. 입력은 센서 평균 17개뿐이며 시간 위치·정답 라벨을 입력에 넣지 않는다. `features_10s.parquet`는 이전 코드 호환용 첫 구간 파일이며, 현재 통합 모델은 1Hz NPZ에서 전체 위치 특징을 직접 구성한다.
-
-`stable_flag`는 원본 **사이클 단위** 라벨이다(0: 안정, 1: 정적 조건에 도달하지 않았을 가능성). 모든 10초 구간에 사이클 라벨을 적용하므로 특정 10초의 실제 안정 여부에 대한 정답 검증과는 다르다. 기존 첫 구간 전용 모델이 남아 있으면 준비 단계에서 오류를 표시한다. 명시적 재학습은 `docker compose run --rm bootstrap python -m src.runtime.bootstrap --rebuild-model`이며 기존 모델은 백업된다.
-
-## 안정·불안정 초기값을 섞는 생성 시나리오
-
-최초 120초는 4개 부품 정상 + 안정 라벨의 고정 초기 시계열로 기준 통계를 수집한다. 이후 60초 단위로 **안정 초기값 2구간 → 불안정 초기값 1구간**을 반복한다. 첫 불안정 초기값 전환은 시작 후 240초이다. 안정 구간은 계절 비교를 위해 같은 기준 초기값을 사용하며 연속 구간에서는 생성기를 리셋하지 않는다. 불안정 구간은 원본 `stable_flag=1` 사이클 중 무작위로 고른다. V5 모델은 재학습하지 않았으며, 선택한 첫 30초를 초기값으로 미래 값을 계속 예측한다. 원본 데이터를 그대로 재생하는 방식은 아니다.
-
-이 비율은 **초기값 선택 비율**이며 생성값의 실제 안정/불안정 비율이나 자연스러운 고장 진행을 보장하지 않는다. 초기값 전환은 불연속일 수 있어 `segment_id`가 바뀌면 추론 버퍼를 비우고 10초 동안 `warming_up`으로 표시한다. 이후 웹과 Unity에는 실제 분류 결과만 전달한다. 초기 라벨로 예측 결과를 덮어쓰지 않는다.
-
-Kafka에는 센서값 외에 실행/이벤트/구간 ID와 `reference_context`를 전달한다. 감지기는 같은 기준 운전 구간끼리만 계절 offset을 비교하며 다른 초기 운전 조건 구간에서는 `condition_excluded`로 표시하고 새 재학습 요청을 만들지 않는다. 기준 구간으로 복귀하면 감지 창을 새로 모은다. 이는 시뮬레이터가 알고 있는 운전 문맥을 이용한 보호 장치이며, 실제 공장에서는 운전 모드 정보 또는 별도 조건 분리 검증이 필요하다. 분류 모델은 이 문맥을 입력으로 사용하지 않는다. 이미 시작한 재학습은 마지막 기준 구간에서 추정한 offset으로 진행될 수 있다. 저장된 추정값이 없거나 최신 기준 구간의 추정값이 요청 당시와 달라지면 배포를 보류한다. 제외 구간에서는 마지막 추정값을 유지하므로 그동안의 계절 변화까지 실시간으로 검증하는 것은 아니다.
-
-## 센서 그래프의 정상 운전 기준 범위
-
-센서 목록에서 17개 중 하나를 선택하면 해당 센서의 기준 음영과 실시간 값이 같은 그래프에 표시된다. `GET /api/v1/sensors/reference-bands`가 센서별 상한·하한과 근거를 제공한다.
-
-- 기준: 원본 학습·검증 사이클 중 4개 부품 정상 + `stable_flag=0`. 평가 사이클은 제외한다. 현재 해당 사이클은 5개, 1초 평균 표본은 300개이다. 시간적으로 연관된 표본이므로 독립 측정 300회와 같지 않다.
-- 범위: 전체 운전 단계의 1초 평균에서 센서별 1~99백분위. 10초 평균이나 AI 예측 확률로 만든 범위가 아니다. 안전 규격 한계 또는 개별 센서 고장 판정 기준도 아니다.
-- 표시: 범위 밖 점과 연결 구간은 주황색. 유효한 새 수신값 3개가 연속 이탈하면 그래프의 `기준 범위 이탈 경고`와 센서 목록의 경고 기호를 표시한다. 범위 안으로 돌아오면 해제한다. 기준 안이라는 사실만으로 AI 정상 판정을 뜻하지 않는다.
-- 누락값은 정상 취급하지 않는다. 수신 공백·실행 재시작·생성 초기값 전환 시 연속 횟수를 초기화한다. 같은 이벤트를 여러 번 조회해도 횟수를 늘리지 않는다. 현재 데이터가 지연되면 범위 판단을 중지한다. 생성 초기값 전환 시 해당 그래프 이력도 비워 서로 다른 구간을 연결하지 않는다.
-- 기준은 원본 데이터에서 API 프로세스 시작 후 최초 요청 때 계산하여 고정한다. 드리프트나 자동 재학습으로 밴드를 넓히지 않는다. 원본·분할을 의도적으로 변경한 뒤 기준을 다시 계산하려면 API를 재시작한다. 원본이 없거나 정상 기준 사이클이 3개 미만이면 API는 503을 반환하고 웹은 범위 판단 중지를 표시한다.
-- 정상 기준 사이클이 적고 운전 단계별로 분리하지 않아 시연용 참고 범위이다. 실제 적용에는 운전 모드별 정상 이력과 현장 검증이 필요하다. Unity 이름표 및 부품 AI 진단의 판단 방식은 변경하지 않는다.
-
-범위·API Python 검사와 기존 회귀 검사를 합해 39개, 화면의 연속 이탈 판단 JavaScript 검사 3개가 통과했다. 실제 웹에서 기준 음영과 온도 센서 이탈 경고를 확인했다.
-
-## 랜덤 계절 드리프트 설정
-
-`.env` 변경 후 `docker compose up -d --force-recreate producer`로 생성기를 재시작한다.
-
-| 설정 | 기본값 | 의미 |
-|---|---|---|
-| `TEMP_OFFSET_MIN`, `TEMP_OFFSET_MAX` | -4, 4 | 온도 TS1~TS4의 공통 offset(°C) |
-| `PRESSURE_OFFSET_PERCENT` | 10 | 압력 PS1~PS6의 정상 기준 평균 대비 ±10% |
-| `DRIFT_INTERVAL_MIN_SEC`, `DRIFT_INTERVAL_MAX_SEC` | 60, 1200 | 드리프트 시작과 다음 시작 사이의 무작위 간격 |
-| `DRIFT_RAMP_SEC` | 30 | 이전 offset에서 새 offset까지 선형 이동하는 시간 |
-| `INITIAL_NORMAL_SEC` | 120 | 최초 정상 기준 수집 시간 |
-| `OPERATING_SEGMENT_SEC` | 60 | 초기값 선택 시나리오의 한 구간 길이 |
-
-온도 offset과 압력 비율은 매 발생마다 균등 무작위로 독립 선택한다. 압력은 각 센서의 초기 정상 평균 × 선택 비율을 고정 bar offset으로 환산한다. 원본 모델 값에 절대 offset을 적용하므로 반복해서 누적되지 않는다. 다음 offset이 0에 가까우면 유의한 드리프트로 감지되지 않을 수 있으며, 변화가 너무 자주 일어나 안정 구간이 부족하면 재학습을 기다린다.
-
-주입 설정과 초기 라벨은 `artifacts/runtime/scenario.json`에 진단용으로 기록한다. 생성 데이터의 정답이 아니며 학습 라벨로 쓰지 않는다. 감지기는 주입 offset을 읽지 않고 기준 운전의 Kafka 센서값으로 offset을 추정한다. 실제 신규 라벨은 없으므로 기존 검증 라벨에 계절 변화만 합성한다. 실제 고장이나 설비 운전 조건 변경을 계절 변화로 자동 간주하는 운영 시스템은 아니다.
-
-## Jenkins와 파일
-
-`hydrotwin-local` 작업의 `verify`는 회귀 테스트와 실제 API 스트림을 확인한다. `retrain`은 감지기가 저장한 대기 요청이 있을 때만 학습한다. 새 코드 배포용 이미지 빌드는 `start.ps1`이 담당하며 Git push 웹훅은 아직 구성하지 않았다.
-
-- 모델: `models/predict/integrated_lgbm.joblib`
-- 후보·백업: `models/predict/`
-- 재학습 평가 보고서: `artifacts/retraining/`
-- 최신 상태·감지·요청: `artifacts/runtime/`
-- 센서 로그: `observations.jsonl` (10MB씩 순환, 이전 파일 3개 보관)
-
-Jenkins는 로컬 Docker 제어용 소켓 권한을 가진다. 임의 작업을 등록하면 호스트 Docker를 제어할 수 있으므로 신뢰된 사용자만 로그인해야 한다. 포트는 127.0.0.1에만 열어두었다. 이 구성은 교육용 단일 PC 통합 환경이며 외부 서비스 공개 전에는 인증, 권한 분리, 비밀 관리, 계측·알림, 별도 검증 데이터가 필요하다.
-
-## 2026-09-03 로컬 검증 기록
-
-- Docker 디스크를 `D:\DockerDesktop\DockerDesktopWSL`로 이동했고, 이동 전 백업은 `D:\DockerRecovery\before-move-20260903`에 보존했다.
-- 새 Unity WebGL 빌드 로딩, 센서 마커의 상태 변화, 웹 센서값·진단 갱신을 확인했다. 이전 `ApplyState` 충돌과 빌드 캐시 혼합에 따른 로딩 오류를 수정했다.
-- 센서 관측 로그의 최근 60개 간격은 평균 1.000초였다. 개별 간격에는 실행 환경에 따른 지연 변동이 있다.
-- 회귀 테스트 25개가 통과했다. 랜덤 offset 범위·발생 간격, 10초 입력, 후보 교체 백업, TreeSHAP 응답, 이전 실행 상태 구분, Unity gzip 제공 등을 검사했다.
-- Jenkins 작업 5번은 실제 감지 요청으로 자동 실행되어 재학습과 연결 검사를 성공했다. 해당 시나리오는 온도 약 -1.29°C, 압력 약 -2.62%였으며 감지기는 주입 정답이 아닌 관측값에서 offset을 추정했다.
-- 후보는 계절 환경에서 학습·평가됐지만 기존 환경 평균 성능이 운영 모델보다 낮아 배포를 거절했다. 운영 모델은 유지했다. 따라서 실제 후보의 자동 교체 성공까지 확인된 것으로 보고하지 않는다. 교체·백업은 단위 테스트로 검증했으며, 전체 실행 중 교체 확인은 성능 기준을 통과한 후보가 나왔을 때 추가 확인해야 한다.
-
-### 전체 위치 학습 적용 후 추가 검증
-
-- 위 기록은 이전 첫 구간 모델 시점이다. 이후 전체 위치 학습을 반영한 자동 재학습 요청 `4c5d677503c04bd88e01a3c5ff380636`은 원본/계절 환경 성능 게이트를 통과했다. 2026-09-03 03:35 UTC에 후보 교체와 추론기의 새 모델 반영 확인까지 `promoted`로 완료됐다. 기존 모델은 `models/predict/integrated_lgbm.20260903T033521Z.backup.joblib`에 보존됐다.
-- 적용 모델은 전체 위치 + 온도 약 -3°C 증강으로 학습했다. 별도 331개 사이클의 16,881개 구간에서 정확도: 냉각기 99.81%, 밸브 79.97%, 펌프 98.73%, 축압기 96.64%, 안정 여부 95.24%. 불안정 탐지율은 87.78%이다. 이전 첫 구간 모델을 동일한 전체 위치에서 평가하면 안정 여부 정확도 70.12%, 불안정 탐지율 8.47%였다. 사이클 라벨을 재사용한 평가라는 한계는 그대로다.
-- 밸브는 전체 위치에서 성능이 상대적으로 낮다. 첫 구간의 높은 점수를 전 시간대 성능으로 발표하지 않는다. 전체 위치에서 밸브 macro-F1은 0.738이다.
-- 생성기 학습 제외 + 분류기 평가 교집합은 60개 사이클(안정 초기값 57개, 불안정 초기값 3개)이다. 60초 생성값의 초기 라벨 일치도는 안정 여부 89.51%, 불안정 초기 라벨 탐지 비율 24.18%에 불과했다. **생성값의 실제 정답에 대한 정확도가 아니다.** 모델 선택에 사용된 생성기 검증 데이터이며, 불안정 사이클도 너무 적다. 생성기의 상태 보존과 장기 생성·드리프트 조합은 추가 검증이 필요하다.
-- 생성값 검사 재실행: `docker compose run --rm bootstrap python -m src.model.evaluate_generated`. 해당 검사는 학습하거나 운영 모델을 교체하지 않는다. 출력은 `artifacts/runtime/generated_seed_validation.json`, 적용 모델 원본 평가는 `artifacts/runtime/rolling_training_validation.json`에 기록했다.
-- 변경 후 회귀 테스트 35개와 Kafka → 추론 → TreeSHAP → 웹 API 연결 검사를 통과했다. 초기값 전환 시 버퍼 초기화와 다른 운전 조건의 드리프트 학습 제외를 포함한다.
-- Jenkins 검증 작업 13번도 성공했다. 실시간 실행에서 240초에 불안정 초기 사이클 796으로 전환, 10개 수집 후 추론 재개, 300초에 기준 사이클 1788로 복귀와 재수집을 확인했다. 제외 구간에는 새 재학습 요청이 생성되지 않았다. 기록은 `artifacts/runtime/segment_live_validation.json`이다. 실제 AI 응답은 초기 라벨과 달랐던 순간도 있어, 이 결과를 생성값의 상태 재현 성공으로 해석하지 않는다.
+일상적인 중지에 `docker compose down -v`를 사용하지 않는다. `-v`는 Kafka와 Jenkins 볼륨을
+삭제한다.

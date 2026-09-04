@@ -175,15 +175,58 @@ def validate_seed_records(
     return results
 
 
+class MixedSeedController:
+    """설비별 기준 초기값을 유지하며 안정 2구간·불안정 1구간을 반복한다."""
+
+    def __init__(self, raw_data, profiles, runtimes, seed=None):
+        from src.runtime.seed_schedule import SeedSchedule
+        self.raw_data = raw_data
+        self.profiles = np.asarray(profiles)
+        self.runtimes = runtimes
+        self.schedules = {}
+        self.choices = {}
+        for index, equipment_id in enumerate(EQUIPMENT_IDS):
+            schedule = SeedSchedule(
+                profiles, reference_seed=runtimes[equipment_id].seed_record,
+                seed=None if seed is None else seed+index,
+            )
+            # 같은 불안정 초기값을 동시에 골라 설비 출력이 복제되는 것을 방지한다.
+            schedule.unstable_pool = schedule.unstable_pool[index::len(EQUIPMENT_IDS)]
+            if not schedule.unstable_pool:
+                raise ValueError('서로 다른 설비 초기값을 위해 불안정 사이클이 3개 이상 필요합니다.')
+            self.schedules[equipment_id] = schedule
+
+    def advance(self, elapsed):
+        changes = []
+        for equipment_id, schedule in self.schedules.items():
+            record, segment_id, reference = schedule.select(elapsed)
+            runtime = self.runtimes[equipment_id]
+            if record != runtime.seed_record:
+                self.runtimes[equipment_id] = V5StationRuntime(
+                    equipment_id=equipment_id, seed_record=record, model=runtime.model,
+                    input_scaler=runtime.input_scaler, offset_scaler=runtime.offset_scaler,
+                    sensor_min=runtime.sensor_min, sensor_max=runtime.sensor_max,
+                    seed_window=self.raw_data[record, :WINDOW_SIZE], ps4_index=runtime.ps4_index,
+                )
+                changes.append(equipment_id)
+            # 초기 라벨은 생성기의 점검 기록에만 남긴다. AI 입력이나 정답으로 전달하지 않는다.
+            self.choices[equipment_id] = {
+                'seed_record':record, 'seed_stable_flag':int(self.profiles[record, 4]),
+                'segment_id':segment_id, 'reference_context':reference,
+            }
+        return changes
+
+
 def create_multi_raw_message(
     equipment_id: str,
     timestamp: str,
     sensor_names: Sequence[str],
     sensor_values: Sequence[float],
+    *, run_id=None, event_id=None, segment_id=None, reference_context=None,
 ) -> dict:
     if equipment_id not in EQUIPMENT_IDS:
         raise ValueError(f"Unsupported equipment_id: {equipment_id}")
-    return {
+    message = {
         "equipment_id": equipment_id,
         "timestamp": timestamp,
         "sensors": {
@@ -191,6 +234,11 @@ def create_multi_raw_message(
             for sensor, value in zip(sensor_names, sensor_values)
         },
     }
+    if any(value is not None for value in (run_id,event_id,segment_id)):
+        message.update(run_id=run_id,event_id=event_id,segment_id=segment_id)
+    if reference_context is not None:
+        message['reference_context'] = bool(reference_context)
+    return message
 
 
 def current_timestamp() -> str:
@@ -217,8 +265,18 @@ def clip_for_six_decimal_raw_range(
 
 
 def validate_multi_raw_message(message: Mapping, sensor_names: Sequence[str]) -> None:
-    if set(message) != {"equipment_id", "timestamp", "sensors"}:
+    base_keys = {"equipment_id", "timestamp", "sensors"}
+    metadata_keys = {'run_id','event_id','segment_id','reference_context'}
+    if set(message) not in (base_keys, base_keys | metadata_keys):
         raise ValueError(f"Invalid Multi Raw message keys: {list(message)}")
+    if 'run_id' in message:
+        if not isinstance(message['run_id'],str) or not message['run_id']:
+            raise ValueError('생성기 실행 ID가 필요합니다.')
+        for key, minimum in (('event_id',1),('segment_id',0)):
+            if type(message[key]) is not int or message[key] < minimum:
+                raise ValueError('이벤트·구간 번호는 유효한 정수여야 합니다.')
+        if type(message['reference_context']) is not bool:
+            raise ValueError('기준 운전 문맥은 참/거짓이어야 합니다.')
     if message["equipment_id"] not in EQUIPMENT_IDS:
         raise ValueError(f"Invalid equipment_id: {message['equipment_id']}")
     sensors = message["sensors"]

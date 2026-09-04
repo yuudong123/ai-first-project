@@ -1,4 +1,4 @@
-"""Three-station Kafka runtime using one already-trained V5 model."""
+"""학습된 V5 모델 하나로 설비 3대의 안정·불안정 초기값을 섞어 Kafka에 전송한다."""
 
 from __future__ import annotations
 
@@ -9,20 +9,18 @@ import os
 import resource
 import sys
 import time
+import uuid
 from pathlib import Path
 
 import joblib
-import matplotlib
 import numpy as np
 import tensorflow as tf
 from kafka import KafkaProducer
 
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 SIMULATOR_SOURCE = PROJECT_ROOT / "src" / "simulator"
 if str(SIMULATOR_SOURCE) not in sys.path:
     sys.path.insert(0, str(SIMULATOR_SOURCE))
@@ -32,6 +30,7 @@ from v5_multi_station_utils import (  # noqa: E402
     DEFAULT_SEED_RECORDS,
     EQUIPMENT_IDS,
     V5StationRuntime,
+    MixedSeedController,
     assert_station_values_differ,
     clip_for_six_decimal_raw_range,
     create_multi_raw_message,
@@ -39,6 +38,8 @@ from v5_multi_station_utils import (  # noqa: E402
     validate_multi_raw_message,
     validate_seed_records,
 )
+from src.runtime.common import write_state  # noqa: E402
+from src.runtime.scenario import RandomSeason, ScenarioConfig  # noqa: E402
 
 
 DATA_DIR = PROJECT_ROOT / "data" / "processed" / "simulator"
@@ -52,7 +53,7 @@ BOUNDS_FILE = MODEL_DIR / "sensor_bounds_v5.npz"
 METADATA_FILE = MODEL_DIR / "generator_metadata_v5.json"
 DEFAULT_OUTPUT_DIR = DATA_DIR / "multi_station"
 DEFAULT_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
-DEFAULT_TOPIC = os.getenv("KAFKA_MULTI_TOPIC", "hydraulic.sensor.multi.raw")
+DEFAULT_TOPIC = os.getenv("KAFKA_MULTI_TOPIC", os.getenv("KAFKA_TOPIC", "hydraulic.sensor.multi.raw"))
 TRAIN_RATIO = 0.8
 
 
@@ -69,6 +70,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--seed", type=int, help="불안정 초기값 선택을 재현할 때 지정")
+    parser.add_argument("--dry-run", action="store_true", help="Kafka에 연결·송신하지 않고 제한된 길이를 빠르게 생성")
     return parser.parse_args()
 
 
@@ -203,7 +206,8 @@ def write_result_artifacts(
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "v5_multi_station_runtime.csv"
-    fields = ["elapsed_sec", "equipment_id", "timestamp"] + sensor_names
+    fields = ["elapsed_sec", "equipment_id", "timestamp", "run_id", "segment_id",
+              "seed_record", "seed_stable_flag"] + sensor_names
     with csv_path.open("w", newline="", encoding="utf-8") as output_file:
         writer = csv.DictWriter(output_file, fieldnames=fields)
         writer.writeheader()
@@ -273,7 +277,14 @@ def write_result_artifacts(
     graph_dir = output_dir / "graphs"
     graph_dir.mkdir(parents=True, exist_ok=True)
     graph_paths = []
-    for sensor in ("TS1", "PS1", "FS1"):
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+    except ImportError:
+        plt = None
+        print('matplotlib 미설치: 생성 CSV·검증 결과만 저장하고 선택 그래프는 생략합니다.',flush=True)
+    for sensor in (("TS1", "PS1", "FS1") if plt is not None else ()):
         sensor_index = sensor_names.index(sensor)
         figure, axis = plt.subplots(figsize=(12, 5))
         for equipment_id in EQUIPMENT_IDS:
@@ -332,6 +343,11 @@ def write_result_artifacts(
         "topic": topic,
         "equipment_ids": list(EQUIPMENT_IDS),
         "seed_records": DEFAULT_SEED_RECORDS,
+        "seed_schedule": "최초 안정 120초 이후 안정 120초 / 불안정 60초 반복",
+        "label_scope": "initial_seed_only_not_generated_ground_truth",
+        "seed_label_counts": {equipment: {
+            str(label):sum(row['equipment_id']==equipment and row['seed_stable_flag']==label for row in rows)
+            for label in (0,1)} for equipment in EQUIPMENT_IDS},
         "station_checks": station_checks,
         "difference_checks": difference_checks,
         "graphs": graph_paths,
@@ -349,6 +365,10 @@ def main() -> None:
         raise ValueError("--interval must be greater than zero")
     if args.seconds < 0:
         raise ValueError("--seconds cannot be negative")
+    if args.dry_run and args.seconds == 0:
+        raise ValueError('송신 없는 점검은 --seconds로 길이를 제한해야 합니다.')
+    if not args.dry_run and args.interval != 1.0:
+        raise ValueError('실시간 생성 주기는 1초여야 합니다.')
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     load_start = time.monotonic()
@@ -372,10 +392,23 @@ def main() -> None:
         input_scaler,
         offset_scaler,
     )
+    controller = MixedSeedController(raw_data, profiles, runtimes, seed=args.seed)
+    scenario_config = ScenarioConfig(
+        minimum_interval=int(os.getenv('DRIFT_INTERVAL_MIN_SEC','60')),
+        maximum_interval=int(os.getenv('DRIFT_INTERVAL_MAX_SEC','1200')),
+        temperature_min=float(os.getenv('TEMP_OFFSET_MIN','-4')),
+        temperature_max=float(os.getenv('TEMP_OFFSET_MAX','4')),
+        pressure_percent=float(os.getenv('PRESSURE_OFFSET_PERCENT','10')),
+        ramp_seconds=int(os.getenv('DRIFT_RAMP_SEC','30')),
+        initial_normal_seconds=int(os.getenv('INITIAL_NORMAL_SEC','120')),
+    )
+    season = RandomSeason(scenario_config,seed=args.seed)
+    baseline_values = {equipment_id:[] for equipment_id in EQUIPMENT_IDS}
+    run_id = uuid.uuid4().hex
     seed_path = write_seed_statistics(
         args.output_dir, raw_data, profiles, sensor_names
     )
-    producer = KafkaProducer(
+    producer = None if args.dry_run else KafkaProducer(
         bootstrap_servers=args.broker,
         value_serializer=lambda value: json.dumps(
             value, ensure_ascii=False
@@ -396,7 +429,8 @@ def main() -> None:
     print(f"Seed records         : {DEFAULT_SEED_RECORDS}")
     print(f"Validated profiles   : {[seed.profile for seed in seeds]}")
     print(f"Interval / seconds   : {args.interval:.3f} / {args.seconds or 'unlimited'}")
-    print("Mode                 : NORMAL only; no drift; predict only")
+    print('생성 방식             : 최초 안정 120초 → 안정 120초 / 불안정 60초 반복 (초기값 기준)')
+    print(f'Kafka 송신             : {not args.dry_run}; 초기 라벨은 생성값의 정답이 아님',flush=True)
     print(f"Seed statistics      : {seed_path}", flush=True)
 
     rows = []
@@ -406,6 +440,7 @@ def main() -> None:
     kafka_offsets = []
     rss_samples = [read_rss_mb()]
     interrupted = False
+    collect_artifacts = args.seconds > 0
     start_wall = time.monotonic()
     start_cpu = time.process_time()
     next_cycle = start_wall
@@ -414,19 +449,43 @@ def main() -> None:
         while args.seconds == 0 or elapsed_sec < args.seconds:
             cycle_start = time.monotonic()
             timestamp = current_timestamp()
+            for equipment_id in controller.advance(elapsed_sec):
+                choice = controller.choices[equipment_id]
+                print(f'초기값 전환: {equipment_id}, {elapsed_sec}초, {choice} (생성값 정답 아님)',flush=True)
             station_values = {}
             for equipment_id in EQUIPMENT_IDS:
                 values = runtimes[equipment_id].predict_next()
+                if elapsed_sec < scenario_config.initial_normal_seconds:
+                    baseline_values[equipment_id].append(values.copy())
                 station_values[equipment_id] = values
                 phases[equipment_id].append(runtimes[equipment_id].cycle_position)
             assert_station_values_differ(station_values)
 
+            temperature_offset,pressure_percent = season.update(elapsed_sec)
+            station_offsets = {}
+            emitted_values = {}
+
             for equipment_id in EQUIPMENT_IDS:
+                pressure_base = np.mean(baseline_values[equipment_id],axis=0)
+                sensor_offsets = {
+                    sensor:temperature_offset for sensor in sensor_names if sensor.startswith('TS')
+                }
+                sensor_offsets.update({
+                    sensor:float(pressure_base[index]*pressure_percent/100)
+                    for index,sensor in enumerate(sensor_names) if sensor.startswith('PS')
+                })
+                station_offsets[equipment_id] = sensor_offsets
+                drifted = station_values[equipment_id].copy()
+                for index,sensor in enumerate(sensor_names):
+                    drifted[index] += sensor_offsets.get(sensor,0.0)
                 values = clip_for_six_decimal_raw_range(
-                    station_values[equipment_id], raw_sensor_min, raw_sensor_max
+                    drifted, raw_sensor_min, raw_sensor_max
                 )
                 message = create_multi_raw_message(
-                    equipment_id, timestamp, sensor_names, values
+                    equipment_id, timestamp, sensor_names, values,
+                    run_id=run_id, event_id=elapsed_sec+1,
+                    segment_id=controller.choices[equipment_id]['segment_id'],
+                    reference_context=controller.choices[equipment_id]['reference_context'],
                 )
                 validate_multi_raw_message(message, sensor_names)
                 serialized_values = np.asarray(
@@ -437,22 +496,45 @@ def main() -> None:
                     & (serialized_values <= raw_sensor_max)
                 ).all():
                     raise ValueError(f"{equipment_id} exceeds UCI Raw range")
-                metadata = producer.send(args.topic, value=message).get(timeout=10)
-                kafka_offsets.append((metadata.partition, metadata.offset))
+                if producer is not None:
+                    metadata = producer.send(args.topic, value=message).get(timeout=10)
+                    if collect_artifacts:
+                        kafka_offsets.append((metadata.partition, metadata.offset))
                 sent_values = [message["sensors"][name] for name in sensor_names]
-                generated[equipment_id].append(sent_values)
-                rows.append(
-                    {
-                        "elapsed_sec": elapsed_sec,
-                        "equipment_id": equipment_id,
-                        "timestamp": timestamp,
-                        **dict(zip(sensor_names, sent_values)),
-                    }
-                )
+                station_values[equipment_id] = values
+                emitted_values[equipment_id] = values
+                if collect_artifacts:
+                    generated[equipment_id].append(sent_values)
+                    rows.append(
+                        {
+                            "elapsed_sec": elapsed_sec,
+                            "equipment_id": equipment_id,
+                            "timestamp": timestamp,
+                            "run_id":run_id,
+                            "segment_id":controller.choices[equipment_id]['segment_id'],
+                            "seed_record":controller.choices[equipment_id]['seed_record'],
+                            "seed_stable_flag":controller.choices[equipment_id]['seed_stable_flag'],
+                            **dict(zip(sensor_names, sent_values)),
+                        }
+                    )
+
+            assert_station_values_differ(emitted_values)
+
+            # 주입값과 초기 라벨은 진단 기록일 뿐 Kafka 정답 라벨이나 모델 입력이 아니다.
+            write_state('scenario.json',{
+                'updated_at':timestamp,'elapsed_sec':elapsed_sec,'run_id':run_id,
+                'equipment_ids':list(EQUIPMENT_IDS),'drift_event_id':season.event_id,
+                'temperature_offset':temperature_offset,'pressure_percent':pressure_percent,
+                'next_drift_in_sec':max(0,season.next_start-elapsed_sec),
+                'equipment_sensor_offsets':station_offsets,
+                'interval_range_sec':[scenario_config.minimum_interval,scenario_config.maximum_interval],
+                'label_scope':'initial_seed_only_not_generated_ground_truth','source':'V5 LSTM 설비 3대',
+            })
 
             cycle_elapsed = time.monotonic() - cycle_start
-            cycle_times.append(cycle_elapsed)
-            rss_samples.append(read_rss_mb())
+            if collect_artifacts:
+                cycle_times.append(cycle_elapsed)
+                rss_samples.append(read_rss_mb())
             if cycle_elapsed >= args.interval:
                 print(
                     f"[WARN] cycle {elapsed_sec} took {cycle_elapsed:.6f}s",
@@ -474,17 +556,20 @@ def main() -> None:
                 break
             next_cycle += args.interval
             sleep_seconds = next_cycle - time.monotonic()
-            if sleep_seconds > 0:
+            if sleep_seconds > 0 and not args.dry_run:
                 time.sleep(sleep_seconds)
     except KeyboardInterrupt:
         interrupted = True
         print("\nMulti-Station runtime stopped by operator.", flush=True)
     finally:
-        producer.flush()
-        producer.close()
+        if producer is not None:
+            producer.flush()
+            producer.close()
 
     wall_seconds = time.monotonic() - start_wall
     cpu_seconds = time.process_time() - start_cpu
+    if not collect_artifacts:
+        return
     if not rows:
         raise RuntimeError("No Multi-Station messages were produced")
     artifacts = write_result_artifacts(
