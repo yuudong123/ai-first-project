@@ -1,786 +1,2706 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>유압 시스템 모니터링</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="chart.umd.js"></script>
-<script src="sensor-bands.js?v=20260903-1"></script>
-<script src="equipment-state.js?v=20260903-1"></script>
-<style>
-  :root{
-    --bg-base:#0a0f14;
-    --bg-panel:#0f161d;
-    --bg-panel-2:#131b23;
-    --border:#22303b;
-    --border-soft:#1a2530;
-    --text-primary:#e6edf3;
-    --text-secondary:#7c8e9c;
-    --text-dim:#4d5c68;
-    --accent:#2fe0c4;
-    --accent-dim:rgba(47,224,196,0.12);
-    --normal:#34d399;
-    --caution:#fbbf24;
-    --warning:#fb923c;
-    --danger:#f87171;
-    --font-display:'Space Grotesk', sans-serif;
-    --font-body:'IBM Plex Sans KR', sans-serif;
-    --font-mono:'IBM Plex Mono', monospace;
-  }
-
-  *{ box-sizing:border-box; margin:0; padding:0; }
-
-  body{
-    background:var(--bg-base);
-    color:var(--text-primary);
-    font-family:var(--font-body);
-    min-height:100vh;
-    line-height:1.5;
-    scrollbar-width:none;       /* Firefox */
-    -ms-overflow-style:none;    /* 구형 Edge/IE */
-  }
-  body::-webkit-scrollbar{ display:none; }  /* Chrome/Safari/Edge */
-
-  /* ---------- 헤더 ---------- */
-  header{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:24px;
-    padding:20px 28px;
-    border-bottom:1px solid var(--border-soft);
-  }
-  .title-block{ display:flex; align-items:baseline; gap:14px; }
-  .title-block h1{
-    font-family:var(--font-display);
-    font-weight:600;
-    font-size:20px;
-    letter-spacing:-0.01em;
-  }
-  .title-block span{
-    font-family:var(--font-mono);
-    font-size:12px;
-    color:var(--text-dim);
-  }
-
-  /* ---------- 헤더 가운데 지표 ---------- */
-  .header-metrics{
-    display:flex;
-    gap:32px;
-    align-items:baseline;
-  }
-  .metric{ display:flex; align-items:baseline; gap:8px; }
-  .metric-value{
-    font-family:var(--font-mono);
-    font-size:20px;
-    color:var(--text-primary);
-    line-height:1;
-  }
-  .metric-label{
-    font-family:var(--font-mono);
-    font-size:11px;
-    color:var(--text-dim);
-    white-space:nowrap;
-  }
-  @media (max-width:1100px){
-    .header-metrics{ display:none; }  /* 좁은 화면에선 헤더가 복잡해지니 숨김 */
-  }
-  .status-cluster{ display:flex; align-items:center; gap:20px; }
-  .status-item{
-    display:flex; align-items:center; gap:8px;
-    font-family:var(--font-mono);
-    font-size:12px;
-    color:var(--text-secondary);
-  }
-  .dot{
-    width:7px; height:7px; border-radius:50%;
-    background:var(--text-dim);
-    transition:background .3s;
-  }
-  .dot.live{
-    background:var(--accent);
-    box-shadow:0 0 0 3px var(--accent-dim);
-  }
-  .dot.risk-danger{ background:var(--danger); box-shadow:0 0 0 3px rgba(248,113,113,0.15); }
-
-  /* ---------- 레이아웃 ---------- */
-  main{
-    display:grid;
-    grid-template-columns:1fr 340px;
-    gap:1px;
-    background:var(--border-soft);
-  }
-  @media (max-width:900px){
-    main{ grid-template-columns:1fr; }
-  }
-
-  .panel{ background:var(--bg-base); padding:24px; }
-  .panel-title{
-    font-family:var(--font-mono);
-    font-size:11px;
-    color:var(--text-dim);
-    letter-spacing:0.04em;
-    margin-bottom:16px;
-  }
-
-  /* ---------- 사이드바: 텔레메트리 ---------- */
-  .side-panel{ background:var(--bg-base); border-left:1px solid var(--border-soft); }
-  .section{ padding:22px 24px; border-bottom:1px solid var(--border-soft); }
-  .section-header{
-    display:flex; justify-content:space-between; align-items:baseline;
-    margin-bottom:14px;
-  }
-  .section-header h2{
-    font-family:var(--font-display);
-    font-size:14px; font-weight:600;
-  }
-  .section-header .count{
-    font-family:var(--font-mono);
-    font-size:11px; color:var(--accent);
-  }
-
-  .telemetry-list{
-    display:flex; flex-direction:column; gap:4px;
-    max-height:280px;
-    overflow-y:auto;
-    /* 스크롤바가 값 텍스트를 가리지 않도록 오른쪽에 여백 확보 */
-    padding-right:10px;
-    scrollbar-width:thin;                        /* Firefox */
-    scrollbar-color:var(--border) transparent;   /* Firefox: 막대 / 트랙 */
-  }
-  /* Chrome/Safari/Edge 스크롤바 */
-  .telemetry-list::-webkit-scrollbar{ width:6px; }
-  .telemetry-list::-webkit-scrollbar-track{ background:transparent; }
-  .telemetry-list::-webkit-scrollbar-thumb{
-    background:var(--border);
-    border-radius:3px;
-  }
-  .telemetry-list::-webkit-scrollbar-thumb:hover{ background:var(--text-dim); }
-
-  /* 센서 행: 클릭하면 해당 센서 그래프로 전환 */
-  .telemetry-row{
-    display:flex; justify-content:space-between; align-items:center;
-    font-size:12.5px;
-    padding:5px 8px;
-    border-radius:5px;
-    cursor:pointer;
-    border-left:2px solid transparent;
-    transition:background .15s, border-color .15s;
-  }
-  .telemetry-row:hover{ background:var(--bg-panel); }
-  .telemetry-row:focus-visible{
-    outline:none;
-    background:var(--bg-panel);
-    border-left-color:var(--text-dim);
-  }
-  .telemetry-row.selected{
-    background:var(--accent-dim);
-    border-left-color:var(--accent);
-  }
-  .telemetry-row.selected .name{ color:var(--accent); }
-  .telemetry-row .name{ color:var(--text-secondary); transition:color .15s; }
-  .telemetry-row .val{ font-family:var(--font-mono); color:var(--text-primary); }
-
-  .diag-list{ display:flex; flex-direction:column; gap:10px; }
-  .diag-row{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:9px 10px;
-    background:var(--bg-panel);
-    border-radius:6px;
-    border:1px solid var(--border-soft);
-  }
-  .diag-row .name{ font-size:12.5px; color:var(--text-secondary); }
-  .diag-row .state{ display:flex; align-items:center; gap:7px; }
-  .diag-row .state-text{ font-family:var(--font-mono); font-size:11.5px; }
-  .badge{
-    width:7px; height:7px; border-radius:50%;
-  }
-  .badge.risk-normal{ background:var(--normal); }
-  .badge.risk-caution{ background:var(--caution); }
-  .badge.risk-warning{ background:var(--warning); }
-  .badge.risk-danger{ background:var(--danger); }
-  .state-text.risk-normal{ color:var(--normal); }
-  .state-text.risk-caution{ color:var(--caution); }
-  .state-text.risk-warning{ color:var(--warning); }
-  .state-text.risk-danger{ color:var(--danger); }
-
-  .conf-bar-track{ width:100%; height:2px; background:var(--border-soft); border-radius:2px; margin-top:6px; }
-  .conf-bar-fill{ height:100%; border-radius:2px; background:var(--text-dim); transition:width .4s; }
-
-  /* ---------- 하단 추이 차트 ---------- */
-  .trend-panel{
-    grid-column:1 / -1;
-    background:var(--bg-base);
-    padding:24px 28px 28px;
-    border-top:1px solid var(--border-soft);
-  }
-  .chart-wrap{ height:220px; }
-  .band-info{ font-size:12px; color:var(--text-secondary); margin:8px 0; line-height:1.6; }
-  .band-info.warning, .telemetry-row.band-warning .val{ color:#ffab55; }
-  .band-note{ font-size:11px; color:var(--text-dim); line-height:1.6; margin-top:8px; }
-
-  .empty-state{
-    font-family:var(--font-mono);
-    font-size:12px;
-    color:var(--text-dim);
-    text-align:center;
-    padding:40px 0;
-  }
-
-  /* ---------- Unity WebGL 패널 ---------- */
-  .unity-wrap{
-    position:relative;
-    width:100%;
-    aspect-ratio:16/9;
-    background:#000;
-    border-radius:8px;
-    border:1px solid var(--border-soft);
-    overflow:hidden;
-  }
-  #unity-canvas{
-    width:100%; height:100%; display:block;
-  }
-  .unity-status{
-    position:absolute; inset:0;
-    display:flex; align-items:center; justify-content:center;
-    font-family:var(--font-mono);
-    font-size:12px;
-    color:var(--text-dim);
-    background:rgba(10,15,20,0.85);
-    pointer-events:none;
-    transition:opacity .3s;
-  }
-  .unity-status.hidden{ opacity:0; }
-  .unity-status.error{ color:var(--warning); }
-</style>
-</head>
-<body>
-
-<header>
-  <div class="title-block">
-    <h1>유압 시스템 모니터링</h1>
-    <span id="unit-label">HYDRAULIC UNIT 01</span>
-  </div>
-
-  <div class="header-metrics">
-    <div class="metric">
-      <span class="metric-value" id="elapsed-sec">—</span>
-      <span class="metric-label">경과 시간 (sec)</span>
-    </div>
-    <div class="metric">
-      <span class="metric-value" id="poll-count">0</span>
-      <span class="metric-label">수신 횟수</span>
-    </div>
-  </div>
-
-  <div class="status-cluster">
-    <div class="status-item"><span>사이클 #<span id="cycle-id">—</span></span></div>
-    <div class="status-item"><span id="update-age">데이터 대기 중</span></div>
-    <div class="status-item">
-      <span class="dot" id="conn-dot"></span>
-      <span id="conn-text">연결 확인 중</span>
-    </div>
-  </div>
-</header>
-
-<main>
-  <section class="panel">
-    <div class="panel-title">3D 디지털 트윈 (Unity)</div>
-    <div class="unity-wrap">
-      <canvas id="unity-canvas" width="960" height="540"></canvas>
-      <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
-    </div>
-  </section>
-
-  <aside class="side-panel">
-    <div class="section">
-      <div class="section-header">
-        <h2>실시간 센서 현황</h2>
-        <span class="count" id="sensor-count">17 채널</span>
-      </div>
-      <div class="telemetry-list" id="telemetry-list">
-        <div class="empty-state">데이터 수신 대기 중</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-header">
-        <h2>AI 진단</h2>
-      </div>
-      <div class="diag-list" id="diag-list">
-        <div class="empty-state">예측 결과 대기 중</div>
-      </div>
-    </div>
-  </aside>
-
-  <section class="trend-panel">
-    <div class="panel-title" id="chart-title">CE 추이 (%)</div>
-    <div class="band-info" id="band-info" role="status">정상 운전 기준 범위 불러오는 중</div>
-    <div class="chart-wrap">
-      <canvas id="trend-chart"></canvas>
-    </div>
-    <div class="band-note" id="band-note">음영: 정상 운전 기준 범위 · 주황색: 범위 이탈 · AI 고장 판단과 별도</div>
-  </section>
-</main>
-
-<script>
-const API_BASE = location.port === '8000' ? '' : 'http://127.0.0.1:8000';
-const POLL_INTERVAL_MS = 1000;
-const MAX_HISTORY = 30;
-const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지연"으로 간주
-
-// ---------- Unity WebGL 연동 설정 ----------
-// Build 폴더를 web/index.html과 같은 위치(web/Build/)에 복사해서 넣어야 함.
-// 실제 파일명: pro-build.loader.js, pro-build.data.gz, pro-build.framework.js.gz, pro-build.wasm.gz
-const UNITY_BUILD_FOLDER = "Build";
-const UNITY_OBJECT_NAME = "_App";
-// 같은 오브젝트의 내부 상태 처리 함수와 충돌하지 않는 웹 전용 진입점.
-const UNITY_METHOD_NAME = "ApplyWebState";
-const UNITY_CLEAR_METHOD = "ClearState";
-let unityInstance = null;
-
-const SENSOR_ORDER = ["PS1","PS2","PS3","PS4","PS5","PS6","EPS1","FS1","FS2","TS1","TS2","TS3","TS4","VS1","CE","CP","SE"];
-const SENSOR_UNITS = {
-  PS1:"bar", PS2:"bar", PS3:"bar", PS4:"bar", PS5:"bar", PS6:"bar",
-  EPS1:"W", FS1:"l/min", FS2:"l/min",
-  TS1:"°C", TS2:"°C", TS3:"°C", TS4:"°C",
-  VS1:"mm/s", CE:"%", CP:"kW", SE:"%",
-};
-
-const RISK_LABEL = { normal:"정상", caution:"주의", warning:"경고", danger:"위험" };
-const COMPONENT_LABEL = { pump:"펌프", valve:"밸브", cooler:"쿨러", accumulator:"어큐뮬레이터" };
-
-// ---------- 설비 선택 (Unity 3D 화면에서 머신 클릭 시 연동) ----------
-const EQUIPMENT_IDS = ["station-01", "station-02", "station-03"];
-let selectedEquipmentId = "station-01";
-
-let receivedCount = 0;   // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
-let chart = null;
-let referenceBands = null;
-let bandLoadFailed = false;
-let lastEventId = null;
-let lastChangeAt = Date.now();
-
-// 설비별 × 센서별로 이력을 따로 쌓아둔다.
-// 설비나 센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록 하기 위함.
-const histories = {};
-function makeHistory(){
-  const h = { labels: [], sensors: {}, bandState:null };
-  SENSOR_ORDER.forEach(name => { h.sensors[name] = []; });
-  return h;
-}
-EQUIPMENT_IDS.forEach(id => { histories[id] = makeHistory(); });
-
-function currentHistory(id=selectedEquipmentId){
-  if (!histories[id]) histories[id] = makeHistory();
-  return histories[id];
-}
-
-let selectedSensor = "CE";  // 기본으로 보여줄 센서
-
-function fmtNum(n, digits=1){
-  return Number(n).toLocaleString("ko-KR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
-
-function renderTelemetry(sensors){
-  const list = document.getElementById("telemetry-list");
-  list.innerHTML = "";
-  SENSOR_ORDER.forEach(name => {
-    if (!(name in sensors)) return;
-    const row = document.createElement("div");
-    row.className = "telemetry-row" + (name === selectedSensor ? " selected" : "");
-    const bandState = currentHistory().bandState;
-    const warning = bandState && Date.now()-bandState.stamp < STALE_MS
-      && bandState.counts[name] >= (referenceBands?.warning_consecutive_samples || 3);
-    row.classList.toggle('band-warning',Boolean(warning));
-    row.setAttribute("role", "button");
-    row.setAttribute("tabindex", "0");
-    row.title = `${name} 추이를 그래프로 보기`;
-    if (warning) row.title += ' · 기준 범위 이탈 경고 (AI 고장 판단과 별도)';
-    row.innerHTML = `
-      <span class="name">${name}</span>
-      <span class="val">${warning ? '⚠ ' : ''}${fmtNum(sensors[name])} ${SENSOR_UNITS[name] || ""}</span>
-    `;
-    row.addEventListener("click", () => selectSensor(name));
-    row.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " "){
-        e.preventDefault();
-        selectSensor(name);
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HydroTwin 유압 시스템 모니터링</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <!-- 외부/공용 스크립트: Chart.js 차트, 센서 기준범위 판정, 설비 선택 로직 -->
+    <script src="chart.umd.js"></script>
+    <script src="sensor-bands.js?v=20260903-1"></script>
+    <script src="equipment-state.js?v=20260903-1"></script>
+    <style>
+      /* ==================== 공통 테마/색상 ====================
+   기존 HydroTwin 색상 팔레트. UI 색상을 바꿀 때는 이 변수부터 확인한다. */
+      :root {
+        --bg-base: #0a0f14;
+        --bg-panel: #0f161d;
+        --bg-panel-2: #131b23;
+        --border: #22303b;
+        --border-soft: #1a2530;
+        --text-primary: #e6edf3;
+        --text-secondary: #7c8e9c;
+        --text-dim: #4d5c68;
+        --accent: #2fe0c4;
+        --accent-dim: rgba(47, 224, 196, 0.12);
+        --normal: #34d399;
+        --caution: #fbbf24;
+        --warning: #fb923c;
+        --danger: #f87171;
+        --font-display: "Space Grotesk", sans-serif;
+        --font-body: "IBM Plex Sans KR", sans-serif;
+        --font-mono: "IBM Plex Mono", monospace;
       }
-    });
-    list.appendChild(row);
-  });
-}
-
-function selectSensor(name){
-  if (selectedSensor === name) return;
-  selectedSensor = name;
-
-  // 목록 전체를 다시 그리지 않고 선택 표시만 교체
-  document.querySelectorAll("#telemetry-list .telemetry-row").forEach(row => {
-    const rowName = row.querySelector(".name") ? row.querySelector(".name").textContent : null;
-    row.classList.toggle("selected", rowName === name);
-  });
-
-  redrawChart();
-}
-
-function renderDiagnosis(prediction){
-  const list = document.getElementById("diag-list");
-  list.innerHTML = "";
-
-  if (!prediction || prediction.status !== "ready" || !prediction.components || Object.keys(prediction.components).length === 0){
-    const message = prediction?.status === 'stale' ? '해당 설비 데이터 지연 · 예측 갱신 대기'
-      : prediction?.status === 'waiting' ? '해당 설비 데이터 수신 대기'
-      : `AI 예측 준비 중 (${prediction?.observed_window_sec || 0}/10초)`;
-    list.innerHTML = `<div class="empty-state">${message}</div>`;
-    return;
-  }
-
-  Object.entries(prediction.components).forEach(([key, c]) => {
-    const row = document.createElement("div");
-    row.className = "diag-row";
-    row.innerHTML = `
-      <span class="name">${COMPONENT_LABEL[key] || key}</span>
-      <span class="state">
-        <span class="badge risk-${c.risk_level}"></span>
-        <span class="state-text risk-${c.risk_level}">${RISK_LABEL[c.risk_level] || c.risk_level}</span>
-      </span>
-    `;
-    list.appendChild(row);
-    const explanation = document.createElement('div');
-    explanation.style.cssText = 'font-size:11px;color:#7c8e9c;margin:0 0 12px';
-    explanation.textContent = `분류 ${c.state ?? '—'} · 모델 예측 확률 ${((c.confidence||0)*100).toFixed(1)}% · 영향 센서: ${(c.top_sensors||[]).map(s=>s.sensor).join(', ')}`;
-    list.appendChild(explanation);
-  });
-  const stability = document.createElement('small');
-  stability.textContent = `설비 안정화: ${prediction.is_stable ? '안정' : '불안정'}`;
-  list.appendChild(stability);
-}
-
-
-function updateHeader(data){
-  document.getElementById("cycle-id").textContent = data.event_id;
-  document.getElementById("elapsed-sec").textContent = data.elapsed_sec;
-
-  // "생성 시각"(V5가 데이터를 만든 시점) 기준으로 경과 시간 표시.
-  // received_at은 우리 Consumer가 받은 시각이라 둘이 다를 수 있음(네트워크 지연).
-  if (data.generated_at){
-    const generatedAt = new Date(data.generated_at);
-    const ageSec = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
-    document.getElementById("update-age").textContent = `생성 후 ${ageSec}초`;
-  } else {
-    document.getElementById("update-age").textContent = "—";
-  }
-
-  const dot = document.getElementById("conn-dot");
-  const text = document.getElementById("conn-text");
-  const sourceTime = Date.parse(data.generated_at || data.updated_at || '');
-  const stalled = (Date.now() - lastChangeAt) > STALE_MS || !Number.isFinite(sourceTime) || (Date.now() - sourceTime) > STALE_MS;
-
-  dot.classList.remove("live","risk-danger");
-
-  if (stalled){
-    text.textContent = "데이터 지연";
-    // 멀티 모드에서 선택 설비 하나가 지연되어도 다른 설비를 지우지 않는다.
-    if (!Array.isArray(lastPayload?.equipment_states) && !unityCleared){ clearUnity(); unityCleared = true; }
-  } else {
-    const anyDanger = data.prediction && data.prediction.components
-      ? Object.values(data.prediction.components).some(c => c.risk_level === "danger")
-      : false;
-    if (anyDanger){
-      dot.classList.add("risk-danger");
-      text.textContent = "위험 감지됨";
-    } else {
-      dot.classList.add("live");
-      text.textContent = data.prediction && data.prediction.status === "warming_up"
-        ? "정상 수신 중 (AI 대기)"
-        : "정상 수신 중";
-    }
-  }
-}
-
-function updateChart(data,equipmentId=selectedEquipmentId){
-  const history = currentHistory(equipmentId);
-  const previous = history.bandState;
-  if (previous && previous.run === data.run_id && previous.event === data.event_id) return;
-  // 생성 초기값이 달라진 구간을 하나의 연속 그래프로 연결하지 않는다.
-  if (previous && (previous.run !== data.run_id || previous.segment !== data.segment_id)){
-    history.labels = [];
-    SENSOR_ORDER.forEach(name => history.sensors[name] = []);
-  } else if (previous && (data.event_id !== previous.event+1 || Date.parse(data.generated_at || data.updated_at)-previous.stamp > 2000)){
-    history.labels.push('수신 공백');
-    SENSOR_ORDER.forEach(name => history.sensors[name].push(null));
-  }
-  history.bandState = SensorBands.advance(previous,data,referenceBands,SENSOR_ORDER);
-  history.labels.push(`#${data.event_id}`);
-  SENSOR_ORDER.forEach(name => {
-    // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
-    history.sensors[name].push(data.sensors && name in data.sensors ? data.sensors[name] : null);
-  });
-
-  while (history.labels.length > MAX_HISTORY){
-    history.labels.shift();
-    SENSOR_ORDER.forEach(name => history.sensors[name].shift());
-  }
-
-  redrawChart();
-}
-
-function redrawChart(){
-  if (!chart) return;
-  const history = currentHistory();
-  const unit = SENSOR_UNITS[selectedSensor] || "";
-
-  chart.data.labels = history.labels;
-  chart.data.datasets[0].label = unit ? `${selectedSensor} (${unit})` : selectedSensor;
-  chart.data.datasets[0].data = history.sensors[selectedSensor] || [];
-  const band = referenceBands?.sensors?.[selectedSensor];
-  chart.data.datasets[1].data = history.labels.map(() => band ? band.lower : null);
-  chart.data.datasets[2].data = history.labels.map(() => band ? band.upper : null);
-  chart.update("none");
-  const info = document.getElementById('band-info');
-  const state = history.bandState;
-  const values = history.sensors[selectedSensor] || [];
-  const count = state?.counts[selectedSensor] || 0;
-  const stale = !state || !Number.isFinite(state.stamp) || Date.now()-state.stamp >= STALE_MS;
-  const isOutside = SensorBands.outside(values.at(-1),band);
-  const warning = !stale && isOutside === true && count >= (referenceBands?.warning_consecutive_samples || 3);
-  info.classList.toggle('warning',warning);
-  if (!band) info.textContent = bandLoadFailed ? '기준 범위 준비 실패 · 범위 판단 중지' : '정상 운전 기준 범위 불러오는 중';
-  else {
-    const status = stale ? '수신 대기·지연 — 현재 범위 판단 중지' : isOutside === null ? '유효한 센서값 없음'
-      : warning ? `기준 범위 이탈 경고 · ${count}개 연속` : isOutside ? `범위 이탈 관측 · ${count}/3개` : '기준 범위 내';
-    info.textContent = `${selectedSensor} 기준 ${fmtNum(band.lower,3)} ~ ${fmtNum(band.upper,3)} ${unit} · ${status}`;
-  }
-
-  const titleEl = document.getElementById("chart-title");
-  if (titleEl){
-    titleEl.textContent = unit ? `${selectedSensor} 추이 (${unit})` : `${selectedSensor} 추이`;
-  }
-}
-
-function initChart(){
-  const ctx = document.getElementById("trend-chart").getContext("2d");
-  chart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: [],
-      datasets: [
-        {
-          label: selectedSensor,
-          data: [],
-          borderColor: "#2fe0c4",
-          backgroundColor: "rgba(47,224,196,0.08)",
-          borderWidth: 2,
-          pointRadius: ctx => SensorBands.outside(ctx.raw,referenceBands?.sensors?.[selectedSensor]) ? 3 : 0,
-          pointBackgroundColor:'#ffab55',
-          pointBorderColor:'#ffab55',
-          segment:{borderColor:ctx => [ctx.p0.parsed.y,ctx.p1.parsed.y].some(v => SensorBands.outside(v,referenceBands?.sensors?.[selectedSensor])) ? '#ffab55' : '#2fe0c4'},
-          tension: 0,
-          fill: false,
-          spanGaps: false,
-          order:0,
-        },
-        {label:'기준 하한',data:[],borderColor:'rgba(80,190,150,.5)',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,order:2},
-        {label:'정상 운전 기준 범위',data:[],borderColor:'rgba(80,190,150,.5)',backgroundColor:'rgba(80,190,150,.15)',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:1,order:2},
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        tooltip:{filter:item => item.datasetIndex === 0},
-        legend: {
-          onClick:()=>{},
-          labels: { filter:item => item.datasetIndex !== 1, color: "#7c8e9c", font: { family: "IBM Plex Mono", size: 11 }, boxWidth: 10 },
-        },
-      },
-      scales: {
-        x: { ticks: { color: "#4d5c68", font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: "#1a2530" } },
-        y: { ticks: { color: "#4d5c68", font: { size: 10 } }, grid: { color: "#1a2530" } },
-      },
-    },
-  });
-  redrawChart();
-}
-
-async function loadReferenceBands(){
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/sensors/reference-bands`);
-    if (!response.ok) throw new Error('기준 범위 응답 오류');
-    const value = await response.json();
-    if (!SENSOR_ORDER.every(s => Number.isFinite(value.sensors?.[s]?.lower) && Number.isFinite(value.sensors?.[s]?.upper))) throw new Error('센서 기준 누락');
-    referenceBands = value;
-    bandLoadFailed = false;
-    document.getElementById('band-note').textContent = `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
-  } catch(error){ bandLoadFailed = true; }
-  redrawChart();
-}
-
-// ---------- Unity로 데이터 전달 (web-unity.md 규격) ----------
-function sendToUnity(payload){
-  if (!unityInstance) return;
-  try {
-    unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_METHOD_NAME, JSON.stringify(payload));
-  } catch (err) {
-    console.error("Unity SendMessage(ApplyWebState) 실패:", err);
-  }
-}
-
-function clearUnity(){
-  if (!unityInstance) return;
-  try {
-    unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_CLEAR_METHOD);
-  } catch (err) {
-    console.error("Unity SendMessage(ClearState) 실패:", err);
-  }
-}
-
-let unityCleared = false; // 연속으로 여러 번 ClearState를 호출하지 않기 위한 플래그
-let lastPayload = null;   // 설비를 바꿨을 때 즉시 다시 그리기 위해 마지막 응답을 보관
-
-/**
- * API 응답에서 현재 선택된 설비의 데이터만 골라낸다.
- * - equipment_states 배열이 오면 selectedEquipmentId와 일치하는 항목을 사용
- * - 설비 배열이 없으면 다른 설비 값으로 대체하지 않고 대기 상태를 사용
- */
-function pickEquipmentData(payload){
-  return EquipmentState.select(payload,selectedEquipmentId);
-}
-
-function renderSelectedEquipment(){
-  const labelEl = document.getElementById("unit-label");
-  if (labelEl) labelEl.textContent = selectedEquipmentId.toUpperCase();
-
-  // 설비를 바꾸면 그 설비의 이력으로 차트를 다시 그린다
-  redrawChart();
-
-  // 마지막으로 받은 데이터가 있으면 즉시 화면 갱신 (다음 폴링까지 기다리지 않도록)
-  if (lastPayload){
-    const view = pickEquipmentData(lastPayload);
-    renderTelemetry(view.sensors);
-    renderDiagnosis(view.prediction);
-  }
-}
-
-// Unity 3D 화면에서 머신을 클릭하면 이 이벤트가 날아온다
-window.addEventListener("hydrotwin-equipment-selected", (event) => {
-  const id = event.detail && event.detail.equipmentId;
-  if (!id || id === selectedEquipmentId) return;
-  selectedEquipmentId = id;
-  console.log("선택된 설비:", selectedEquipmentId);
-  renderSelectedEquipment();
-});
-
-async function poll(){
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/state/latest`);
-    if (!res.ok) {
-      if (res.status === 503){
-        document.getElementById("conn-text").textContent = "Raw Consumer 대기 중";
-        document.getElementById("conn-dot").classList.remove("live");
-        if (!unityCleared){ clearUnity(); unityCleared = true; }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
-      return;
-    }
-    const payload = await res.json();
-    lastPayload = payload;
-    const data = pickEquipmentData(payload);
+      html,
+      body {
+        min-height: 100%;
+        background: var(--bg-base);
+      }
+      body {
+        color: var(--text-primary);
+        font-family: var(--font-body);
+        line-height: 1.5;
+        min-width: 320px;
+      }
+      button {
+        font: inherit;
+      }
+      button:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
 
-    // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
-    const eventKey = `${payload.run_id || ''}:${payload.event_id}`;
-    const isNewEvent = eventKey !== lastEventId;
-    if (isNewEvent){
-      lastEventId = eventKey;
-      lastChangeAt = Date.now();
-      receivedCount += 1;
-      document.getElementById("poll-count").textContent = receivedCount;
-      if (Array.isArray(payload.equipment_states)){
-        payload.equipment_states.forEach(state => {
-          if (EQUIPMENT_IDS.includes(state.equipment_id)) updateChart(state,state.equipment_id);
+      /* 상단 헤더 */
+      .top-header {
+        min-height: 66px;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--border-soft);
+        background: rgba(15, 22, 29, 0.96);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        backdrop-filter: blur(10px);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 280px;
+      }
+      .brand-icon {
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(47, 224, 196, 0.45);
+        border-radius: 6px;
+        background: var(--accent-dim);
+        display: grid;
+        place-items: center;
+        color: var(--accent);
+        font-family: var(--font-display);
+        font-weight: 700;
+        box-shadow: 0 0 14px rgba(47, 224, 196, 0.12);
+      }
+      .brand-line {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .brand-title {
+        font: 700 17px var(--font-display);
+        letter-spacing: 0.06em;
+      }
+      .station-chip {
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        border: 1px solid rgba(47, 224, 196, 0.35);
+        background: var(--accent-dim);
+        padding: 2px 7px;
+        border-radius: 4px;
+      }
+      .brand-sub {
+        font-size: 10.5px;
+        color: var(--text-secondary);
+        margin-top: 1px;
+      }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .connection-badge {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--bg-panel);
+        font: 500 11px var(--font-mono);
+        color: var(--text-secondary);
+      }
+      .connection-badge.normal {
+        border-color: rgba(52, 211, 153, 0.35);
+        color: var(--normal);
+        background: rgba(52, 211, 153, 0.07);
+      }
+      .connection-badge.danger {
+        border-color: rgba(248, 113, 113, 0.35);
+        color: var(--danger);
+        background: rgba(248, 113, 113, 0.07);
+      }
+      .connection-badge.waiting {
+        color: var(--caution);
+        border-color: rgba(251, 191, 36, 0.3);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--text-dim);
+      }
+      .dot.live {
+        background: var(--normal);
+        box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.12);
+      }
+      .dot.risk-danger {
+        background: var(--danger);
+        box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.12);
+      }
+      .header-divider {
+        width: 1px;
+        height: 22px;
+        background: var(--border-soft);
+      }
+      .live-meta {
+        display: flex;
+        gap: 15px;
+        font: 11px var(--font-mono);
+        color: var(--text-secondary);
+      }
+      .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .meta-label {
+        color: var(--text-dim);
+      }
+      .meta-value {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+      .meta-value.accent {
+        color: var(--accent);
+      }
+
+      /* 동적 알림 배너 */
+      .alert-banner {
+        min-height: 42px;
+        padding: 7px 20px;
+        border-bottom: 1px solid var(--border-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        background: var(--bg-panel);
+      }
+      .alert-banner.normal {
+        background: rgba(52, 211, 153, 0.035);
+      }
+      .alert-banner.caution {
+        background: rgba(251, 191, 36, 0.055);
+      }
+      .alert-banner.warning {
+        background: rgba(251, 146, 60, 0.055);
+      }
+      .alert-banner.danger {
+        background: rgba(248, 113, 113, 0.055);
+      }
+      .alert-banner.waiting {
+        background: var(--bg-panel);
+      }
+      .alert-main {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .alert-icon {
+        width: 25px;
+        height: 25px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        color: var(--text-secondary);
+        flex: 0 0 auto;
+      }
+      .alert-banner.normal .alert-icon {
+        color: var(--normal);
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(52, 211, 153, 0.08);
+      }
+      .alert-banner.caution .alert-icon {
+        color: var(--caution);
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.08);
+      }
+      .alert-banner.warning .alert-icon {
+        color: var(--warning);
+        border-color: rgba(251, 146, 60, 0.35);
+        background: rgba(251, 146, 60, 0.08);
+      }
+      .alert-banner.danger .alert-icon {
+        color: var(--danger);
+        border-color: rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.08);
+      }
+      .alert-copy {
+        font-size: 11.5px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .alert-copy b {
+        margin-right: 10px;
+        color: var(--text-primary);
+      }
+      .alert-copy strong {
+        color: var(--text-primary);
+      }
+      .alert-copy span {
+        color: var(--accent);
+      }
+      .alert-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
+      .ghost-button {
+        border: 1px solid var(--border);
+        background: var(--bg-base);
+        color: var(--text-secondary);
+        padding: 5px 9px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 11px;
+        transition: 0.15s;
+      }
+      .ghost-button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .station-attention {
+        border: 1px solid var(--border);
+        background: var(--bg-base);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font: 600 10px var(--font-mono);
+        color: var(--text-secondary);
+      }
+
+      .dashboard {
+        width: min(100%, 1920px);
+        margin: 0 auto;
+        padding: 14px 16px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .card {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-soft);
+        border-radius: 7px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+      }
+      .card-header {
+        min-height: 42px;
+        padding: 9px 13px;
+        background: var(--bg-panel-2);
+        border-bottom: 1px solid var(--border-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .card-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font: 600 11px var(--font-mono);
+        letter-spacing: 0.045em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+      }
+      .card-title-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--accent);
+        box-shadow: 0 0 8px rgba(47, 224, 196, 0.4);
+      }
+      .card-meta {
+        font: 10px var(--font-mono);
+        color: var(--text-secondary);
+      }
+
+      /* 설비 건전성 바 */
+      .health-bar {
+        display: flex;
+        align-items: stretch;
+        min-height: 46px;
+      }
+      .health-label {
+        display: flex;
+        align-items: center;
+        padding: 0 14px;
+        border-right: 1px solid var(--border-soft);
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      .health-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+      .health-item {
+        padding: 8px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-right: 1px solid var(--border-soft);
+        font-size: 11.5px;
+        transition: 0.2s;
+      }
+      .health-item:last-child {
+        border-right: 0;
+      }
+      .health-item.caution {
+        background: rgba(251, 191, 36, 0.055);
+      }
+      .health-item.warning {
+        background: rgba(251, 146, 60, 0.055);
+      }
+      .health-item.danger {
+        background: rgba(248, 113, 113, 0.055);
+      }
+      .health-item.waiting {
+        color: var(--text-dim);
+      }
+      .health-name {
+        color: var(--text-secondary);
+        font-weight: 500;
+      }
+      .health-result {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font: 10.5px var(--font-mono);
+      }
+      .health-result strong {
+        color: var(--text-primary);
+      }
+      .health-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--text-dim);
+      }
+      .health-dot.normal {
+        background: var(--normal);
+      }
+      .health-dot.caution {
+        background: var(--caution);
+      }
+      .health-dot.warning {
+        background: var(--warning);
+      }
+      .health-dot.danger {
+        background: var(--danger);
+      }
+      .health-state.normal {
+        color: var(--normal);
+      }
+      .health-state.caution {
+        color: var(--caution);
+      }
+      .health-state.warning {
+        color: var(--warning);
+      }
+      .health-state.danger {
+        color: var(--danger);
+      }
+
+      /* 메인: Unity + 우측 관제 */
+      .inspection-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
+        gap: 14px;
+        align-items: start;
+      }
+      .unity-card {
+        min-width: 0;
+      }
+      .unity-toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .twin-badge {
+        padding: 3px 7px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        font: 600 10px var(--font-mono);
+        color: var(--text-secondary);
+        background: var(--bg-base);
+      }
+      .twin-badge.normal {
+        color: var(--normal);
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(52, 211, 153, 0.06);
+      }
+      .twin-badge.caution {
+        color: var(--caution);
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.06);
+      }
+      .twin-badge.warning {
+        color: var(--warning);
+        border-color: rgba(251, 146, 60, 0.35);
+        background: rgba(251, 146, 60, 0.06);
+      }
+      .twin-badge.danger {
+        color: var(--danger);
+        border-color: rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.06);
+      }
+      .unity-wrap {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16/9;
+        background: #000;
+        overflow: hidden;
+      }
+      #unity-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .unity-status {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font: 12px var(--font-mono);
+        color: var(--text-dim);
+        background: rgba(10, 15, 20, 0.85);
+        pointer-events: none;
+        transition: opacity 0.3s;
+      }
+      .unity-status.hidden {
+        opacity: 0;
+      }
+      .unity-status.error {
+        color: var(--warning);
+      }
+      .unity-engine {
+        position: absolute;
+        left: 12px;
+        bottom: 9px;
+        font: 9px var(--font-mono);
+        color: rgba(124, 142, 156, 0.6);
+        pointer-events: none;
+      }
+
+      .sensor-card {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .sensor-table-wrap {
+        padding: 8px 10px 10px;
+      }
+      .sensor-table-scroll {
+        max-height: 270px;
+        overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+      .sensor-table-scroll::-webkit-scrollbar {
+        width: 5px;
+      }
+      .sensor-table-scroll::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+      .sensor-table {
+        width: 100%;
+        border-collapse: collapse;
+        font: 10.5px var(--font-mono);
+      }
+      .sensor-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--bg-panel);
+        padding: 5px 7px;
+        border-bottom: 1px solid var(--border-soft);
+        color: var(--text-dim);
+        font: 500 10px var(--font-body);
+        text-align: left;
+      }
+      .sensor-table thead th:nth-child(2) {
+        text-align: right;
+      }
+      .sensor-table thead th:nth-child(3),
+      .sensor-table thead th:nth-child(4) {
+        text-align: center;
+      }
+      .telemetry-row {
+        border-bottom: 1px solid rgba(34, 48, 59, 0.45);
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .telemetry-row:hover {
+        background: var(--bg-panel-2);
+      }
+      .telemetry-row.selected {
+        background: var(--accent-dim);
+        box-shadow: inset 2px 0 var(--accent);
+      }
+      .telemetry-row td {
+        padding: 7px;
+      }
+      .sensor-name-cell {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+      }
+      .sensor-name-cell .name {
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .telemetry-row.selected .name {
+        color: var(--accent);
+      }
+      .sensor-kind {
+        font: 9px var(--font-body);
+        color: var(--text-dim);
+      }
+      .sensor-value-cell {
+        text-align: right;
+        white-space: nowrap;
+      }
+      .sensor-value-cell .val {
+        color: var(--text-primary);
+      }
+      .telemetry-row.band-warning .val {
+        color: var(--caution);
+      }
+      .sensor-unit {
+        margin-left: 4px;
+        font-size: 9px;
+        color: var(--text-secondary);
+      }
+      .sensor-state-cell,
+      .sensor-trend-cell {
+        text-align: center;
+      }
+      .sensor-state-badge {
+        display: inline-block;
+        padding: 1px 5px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        font: 600 9px var(--font-body);
+        color: var(--text-secondary);
+      }
+      .sensor-state-badge.normal {
+        color: var(--normal);
+        border-color: rgba(52, 211, 153, 0.3);
+        background: rgba(52, 211, 153, 0.06);
+      }
+      .sensor-state-badge.caution {
+        color: var(--caution);
+        border-color: rgba(251, 191, 36, 0.3);
+        background: rgba(251, 191, 36, 0.06);
+      }
+      .sensor-state-badge.warning {
+        color: var(--warning);
+        border-color: rgba(251, 146, 60, 0.3);
+        background: rgba(251, 146, 60, 0.06);
+      }
+      .sensor-state-badge.danger {
+        color: var(--danger);
+        border-color: rgba(248, 113, 113, 0.3);
+        background: rgba(248, 113, 113, 0.06);
+      }
+      .sensor-trend-cell {
+        font-weight: 700;
+        color: var(--text-secondary);
+      }
+      .sensor-trend-cell.up {
+        color: var(--accent);
+      }
+      .sensor-trend-cell.down {
+        color: var(--caution);
+      }
+      .table-empty {
+        padding: 32px 8px !important;
+        text-align: center;
+        color: var(--text-dim);
+      }
+      .sensor-toggle {
+        width: 100%;
+        margin-top: 8px;
+      }
+
+      .anomaly-section {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border-soft);
+      }
+      .anomaly-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 7px;
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+      #diag-list {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .anomaly-card {
+        padding: 8px 9px;
+        border: 1px solid var(--border-soft);
+        border-radius: 5px;
+        background: var(--bg-base);
+        font-size: 10.5px;
+        color: var(--text-secondary);
+      }
+      .anomaly-card.caution {
+        border-color: rgba(251, 191, 36, 0.3);
+        background: rgba(251, 191, 36, 0.045);
+      }
+      .anomaly-card.warning {
+        border-color: rgba(251, 146, 60, 0.3);
+        background: rgba(251, 146, 60, 0.045);
+      }
+      .anomaly-card.danger {
+        border-color: rgba(248, 113, 113, 0.3);
+        background: rgba(248, 113, 113, 0.045);
+      }
+      .anomaly-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        color: var(--text-primary);
+      }
+      .anomaly-card-head > span:first-child {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+      }
+      .anomaly-card p + p {
+        margin-top: 3px;
+      }
+      .anomaly-card strong {
+        color: var(--text-primary);
+        font-weight: 500;
+      }
+      .normal-detail {
+        padding: 10px;
+        border: 1px solid rgba(52, 211, 153, 0.22);
+        border-radius: 5px;
+        background: rgba(52, 211, 153, 0.035);
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+      .normal-detail strong {
+        margin-left: 6px;
+        color: var(--normal);
+      }
+      .normal-detail p {
+        margin-top: 4px;
+      }
+      .empty-state {
+        font: 11px var(--font-mono);
+        color: var(--text-dim);
+        text-align: center;
+        padding: 30px 0;
+      }
+      .empty-state.compact {
+        padding: 12px;
+      }
+
+      /* 하단 차트 */
+      .trend-card {
+        min-width: 0;
+      }
+      .trend-header {
+        flex-wrap: wrap;
+      }
+      .trend-head-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .sensor-selector {
+        padding: 4px 8px;
+        border-radius: 4px;
+        border: 1px solid rgba(47, 224, 196, 0.35);
+        background: var(--accent-dim);
+        color: var(--accent);
+        font: 600 10px var(--font-mono);
+      }
+      .trend-metrics {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        font: 10px var(--font-mono);
+        color: var(--text-secondary);
+        flex-wrap: wrap;
+      }
+      .trend-metrics strong,
+      .trend-value {
+        color: var(--text-primary);
+      }
+      .trend-value.up {
+        color: var(--accent);
+      }
+      .trend-value.down {
+        color: var(--caution);
+      }
+      .chart-body {
+        padding: 12px 14px 14px;
+        background: var(--bg-base);
+      }
+      .band-info {
+        font-size: 10.5px;
+        color: var(--text-secondary);
+        margin-bottom: 7px;
+        line-height: 1.5;
+      }
+      .band-info.warning {
+        color: var(--warning);
+      }
+      .chart-wrap {
+        height: 210px;
+      }
+      .band-note {
+        font-size: 9.5px;
+        color: var(--text-dim);
+        line-height: 1.5;
+        margin-top: 7px;
+      }
+      .ai-insight {
+        margin-top: 10px;
+        padding: 9px 11px;
+        border: 1px solid var(--border-soft);
+        border-radius: 5px;
+        background: var(--bg-panel);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 10.5px;
+        color: var(--text-secondary);
+      }
+      .ai-insight strong {
+        color: var(--accent);
+      }
+      #model-label {
+        font: 9.5px var(--font-mono);
+        color: var(--text-dim);
+        white-space: nowrap;
+      }
+
+      .footer {
+        padding: 8px 20px;
+        border-top: 1px solid var(--border-soft);
+        background: var(--bg-panel);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        color: var(--text-dim);
+        font-size: 9.5px;
+      }
+      .footer-right {
+        font-family: var(--font-mono);
+      }
+
+      /* ---------- 이상 상세 모달 ---------- */
+      body.modal-open {
+        overflow: hidden;
+      }
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: none;
+        place-items: center;
+        padding: 20px;
+        background: rgba(5, 7, 11, 0.72);
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+      }
+      .modal-overlay.open {
+        display: grid;
+      }
+      .modal-dialog {
+        width: min(620px, 100%);
+        max-height: min(760px, calc(100vh - 40px));
+        overflow: auto;
+        border: 1px solid rgba(251, 191, 36, 0.55);
+        border-radius: 8px;
+        background: var(--bg-panel);
+        box-shadow:
+          0 0 42px rgba(251, 191, 36, 0.16),
+          0 18px 70px rgba(0, 0, 0, 0.52);
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+      .modal-dialog::-webkit-scrollbar {
+        width: 6px;
+      }
+      .modal-dialog::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+      .modal-header {
+        padding: 12px 14px;
+        background: var(--bg-panel-2);
+        border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+      .modal-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-width: 0;
+      }
+      .modal-warning-icon {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 5px;
+        border: 1px solid rgba(251, 191, 36, 0.4);
+        background: rgba(251, 191, 36, 0.12);
+        color: var(--caution);
+        font-size: 12px;
+        flex: 0 0 auto;
+      }
+      .modal-title {
+        font: 700 13px var(--font-display);
+        color: var(--text-primary);
+        letter-spacing: 0.02em;
+      }
+      .modal-title small {
+        margin-left: 5px;
+        font: 600 9px var(--font-mono);
+        color: var(--caution);
+      }
+      .modal-close {
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--bg-base);
+        color: var(--text-secondary);
+        cursor: pointer;
+      }
+      .modal-close:hover {
+        color: var(--text-primary);
+        border-color: var(--text-dim);
+      }
+      .modal-body {
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .modal-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(251, 191, 36, 0.25);
+        border-radius: 6px;
+        background: var(--bg-base);
+      }
+      .modal-summary-item {
+        min-width: 0;
+      }
+      .modal-summary-label {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 9.5px;
+        color: var(--text-dim);
+      }
+      .modal-summary-value {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .modal-summary-value.mono {
+        font-family: var(--font-mono);
+      }
+      .modal-summary-value.accent {
+        color: var(--accent);
+      }
+      .modal-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 7px;
+      }
+      .modal-section-title h3 {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 10.5px;
+        color: var(--text-primary);
+      }
+      .modal-section-title h3::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .modal-section-title.caution h3::before {
+        background: var(--caution);
+      }
+      .modal-section-title span {
+        font: 9px var(--font-mono);
+        color: var(--text-dim);
+      }
+      .factor-list,
+      .check-list {
+        padding: 10px;
+        border: 1px solid var(--border-soft);
+        border-radius: 6px;
+        background: var(--bg-base);
+      }
+      .factor-row + .factor-row {
+        margin-top: 9px;
+      }
+      .factor-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 4px;
+        font: 9.5px var(--font-mono);
+      }
+      .factor-name {
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .factor-score {
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      .factor-row:first-child .factor-score {
+        color: var(--caution);
+      }
+      .factor-track {
+        height: 4px;
+        border-radius: 4px;
+        background: var(--border-soft);
+        overflow: hidden;
+      }
+      .factor-fill {
+        height: 100%;
+        border-radius: 4px;
+        background: var(--accent);
+      }
+      .factor-row:first-child .factor-fill {
+        background: var(--caution);
+      }
+      .check-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 10px;
+        color: var(--text-secondary);
+      }
+      .check-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .check-bullet {
+        color: var(--caution);
+        font-weight: 700;
+        line-height: 1.5;
+      }
+      .check-row.emphasis {
+        color: var(--caution);
+      }
+      .modal-note {
+        font-size: 9px;
+        color: var(--text-dim);
+        line-height: 1.55;
+      }
+      .modal-footer {
+        padding: 10px 14px;
+        background: var(--bg-panel-2);
+        border-top: 1px solid var(--border-soft);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        position: sticky;
+        bottom: 0;
+      }
+      .modal-button {
+        padding: 6px 12px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        background: var(--bg-base);
+        color: var(--text-secondary);
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .modal-button:hover {
+        color: var(--text-primary);
+        border-color: var(--text-dim);
+      }
+      .modal-button.primary {
+        border-color: rgba(47, 224, 196, 0.5);
+        background: var(--accent);
+        color: #07110f;
+      }
+      .modal-button.primary:hover {
+        filter: brightness(1.05);
+      }
+      .ghost-button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      @media (max-width: 640px) {
+        .modal-overlay {
+          padding: 10px;
+        }
+        .modal-summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .modal-dialog {
+          max-height: calc(100vh - 20px);
+        }
+      }
+
+      @media (max-width: 1100px) {
+        .inspection-grid {
+          grid-template-columns: 1fr;
+        }
+        .header-right {
+          gap: 8px;
+        }
+        .live-meta {
+          gap: 8px;
+        }
+        .health-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .health-item:nth-child(2) {
+          border-right: 0;
+        }
+        .health-item:nth-child(-n + 2) {
+          border-bottom: 1px solid var(--border-soft);
+        }
+      }
+      @media (max-width: 800px) {
+        .top-header {
+          position: static;
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .header-right {
+          width: 100%;
+          justify-content: space-between;
+          flex-wrap: wrap;
+        }
+        .header-divider {
+          display: none;
+        }
+        .alert-banner {
+          align-items: flex-start;
+        }
+        .alert-actions {
+          display: none;
+        }
+        .health-bar {
+          flex-direction: column;
+        }
+        .health-label {
+          border-right: 0;
+          border-bottom: 1px solid var(--border-soft);
+          padding: 8px 12px;
+        }
+        .trend-metrics {
+          display: none;
+        }
+        .footer {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+      @media (max-width: 560px) {
+        .dashboard {
+          padding: 9px;
+        }
+        .health-grid {
+          grid-template-columns: 1fr;
+        }
+        .health-item {
+          border-right: 0 !important;
+          border-bottom: 1px solid var(--border-soft) !important;
+        }
+        .live-meta {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+        }
+        .connection-badge {
+          width: 100%;
+          justify-content: center;
+        }
+        .brand {
+          min-width: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ==================== 상단 헤더 ====================
+     현재 선택 설비, API 수신 상태, 사이클/경과/수신 횟수를 표시한다. -->
+    <header class="top-header">
+      <div class="brand">
+        <div class="brand-icon">H</div>
+        <div>
+          <div class="brand-line">
+            <span class="brand-title">HydroTwin</span
+            ><span class="station-chip" id="unit-label">STATION-01</span>
+          </div>
+          <div class="brand-sub">유압 시스템 모니터링 · SCADA Digital Twin</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="connection-badge waiting" id="connection-badge">
+          <span class="dot" id="conn-dot"></span
+          ><span id="conn-text">연결 확인 중</span>
+        </div>
+        <div class="header-divider"></div>
+        <div class="live-meta">
+          <div class="meta-item">
+            <span class="meta-label">사이클</span
+            ><span class="meta-value">#<span id="cycle-id">—</span></span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">경과</span
+            ><span class="meta-value"><span id="elapsed-sec">—</span>초</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">수신</span
+            ><span class="meta-value"><span id="poll-count">0</span>회</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">최근 수신</span
+            ><span class="meta-value accent" id="update-age"
+              >데이터 대기 중</span
+            >
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ==================== 이상 알림 배너 ====================
+     AI 예측 결과 중 대표 이상을 표시한다. 정상일 때는 이상 상세 버튼이 비활성화된다. -->
+    <aside class="alert-banner waiting" id="alert-banner">
+      <div class="alert-main">
+        <span class="alert-icon">●</span>
+        <div class="alert-copy">
+          <b id="alert-count">AI 예측 대기</b
+          ><span id="alert-summary">데이터를 기다리고 있습니다.</span>
+          <small id="alert-time"></small>
+        </div>
+      </div>
+      <div class="alert-actions">
+        <button
+          class="ghost-button"
+          id="anomaly-detail-btn"
+          type="button"
+          onclick="openAnomalyModal()"
+          disabled
+        >
+          이상 상세 보기 ▶
+        </button>
+        <span class="station-attention" id="alert-station-tag">STATION-01</span>
+      </div>
+    </aside>
+
+    <!-- ==================== 메인 대시보드 ==================== -->
+    <main class="dashboard">
+      <!-- 4개 부품(냉각기/밸브/펌프/축압기)의 AI 상태와 신뢰도를 한눈에 표시 -->
+      <section class="card health-bar" aria-label="설비 건전성">
+        <div class="health-label">설비 건전성</div>
+        <div class="health-grid" id="component-health-grid">
+          <div class="health-item waiting">
+            <span class="health-name">냉각기</span><span>대기</span>
+          </div>
+          <div class="health-item waiting">
+            <span class="health-name">밸브</span><span>대기</span>
+          </div>
+          <div class="health-item waiting">
+            <span class="health-name">펌프</span><span>대기</span>
+          </div>
+          <div class="health-item waiting">
+            <span class="health-name">축압기</span><span>대기</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 중앙 영역: 왼쪽 Unity WebGL + 오른쪽 실시간 센서/AI 진단 -->
+      <section class="inspection-grid">
+        <!-- Unity WebGL 캔버스. API 원본 payload는 sendToUnity()를 통해 전달된다. -->
+        <div class="card unity-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-title-dot"></span>3D 디지털 트윈 (Unity WebGL)
+            </div>
+            <div class="unity-toolbar-right">
+              <span class="twin-badge waiting" id="twin-alert-badge"
+                >AI 상태 대기</span
+              >
+            </div>
+          </div>
+          <div class="unity-wrap">
+            <canvas id="unity-canvas" width="960" height="540"></canvas>
+            <div id="unity-status" class="unity-status">Unity 로딩 중...</div>
+            <div class="unity-engine">ENGINE: UNITY WEBGL · LIVE API STATE</div>
+          </div>
+        </div>
+
+        <!-- 실시간 센서 표. renderTelemetry()가 API 센서값을 동적으로 행으로 생성한다. -->
+        <aside class="card sensor-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-title-dot"></span>실시간 센서 상태
+            </div>
+            <span class="card-meta" id="sensor-count">17 채널 감시 중</span>
+          </div>
+          <div class="sensor-table-wrap">
+            <div class="sensor-table-scroll">
+              <table class="sensor-table">
+                <thead>
+                  <tr>
+                    <th>센서</th>
+                    <th>현재값</th>
+                    <th>상태</th>
+                    <th>추이</th>
+                  </tr>
+                </thead>
+                <tbody id="telemetry-list">
+                  <tr>
+                    <td colspan="4" class="table-empty">데이터 수신 대기 중</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <button
+              class="ghost-button sensor-toggle"
+              id="sensor-toggle-btn"
+              type="button"
+              onclick="toggleSensorTable()"
+            >
+              [ 전체 17개 센서 보기 ]
+            </button>
+            <section class="anomaly-section" id="anomaly-detail">
+              <div class="anomaly-section-title">
+                <span>AI 진단 / 활성 이상</span
+                ><span class="card-meta">10초 관측 기반</span>
+              </div>
+              <div id="diag-list">
+                <div class="empty-state compact">예측 결과 대기 중</div>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </section>
+
+      <!-- 선택 센서 추이 차트. Chart.js + 정상 운전 기준 범위를 함께 표시한다. -->
+      <section class="card trend-card">
+        <div class="card-header trend-header">
+          <div class="trend-head-left">
+            <div class="card-title" id="chart-title">CE 추이 (%)</div>
+            <span class="sensor-selector" id="sensor-selector-label"
+              >CE (%)</span
+            >
+          </div>
+          <div class="trend-metrics">
+            <span>현재값: <strong id="trend-current">—</strong></span>
+            <span>최근 평균: <strong id="trend-average">—</strong></span>
+            <span
+              >변화 방향:
+              <span class="trend-value flat" id="trend-direction"
+                >→ 유지</span
+              ></span
+            >
+            <span>AI 관측 윈도우: <strong id="trend-window">10초</strong></span>
+          </div>
+        </div>
+        <div class="chart-body">
+          <div class="band-info" id="band-info" role="status">
+            정상 운전 기준 범위 불러오는 중
+          </div>
+          <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+          <div class="band-note" id="band-note">
+            음영: 정상 운전 기준 범위 · 주황색: 범위 이탈 · AI 고장 판단과 별도
+          </div>
+          <div class="ai-insight">
+            <span
+              >💡 <strong>AI 분석 소견:</strong>
+              <span id="ai-insight">예측 결과를 기다리고 있습니다.</span></span
+            ><span id="model-label">AI 상태 분류 + 영향 센서 분석</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 화면 하단 기술 스택/서비스 정보 -->
+    <footer class="footer">
+      <span>HydroTwin · 스마트 팩토리 유압 디지털 트윈 통합 관제</span>
+      <span class="footer-right"
+        >FastAPI · Kafka · Unity WebGL · AI Prediction</span
+      >
+    </footer>
+
+    <!-- 이상 상세 모달: 평소에는 숨김, "이상 상세 보기" 클릭 시 표시 -->
+    <div
+      class="modal-overlay"
+      id="anomaly-modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="anomaly-modal-title"
+    >
+      <section class="modal-dialog" tabindex="-1">
+        <header class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-warning-icon">⚠</span>
+            <h2 class="modal-title" id="anomaly-modal-title">
+              이상 감지 <small>ANOMALY DETECTED</small>
+            </h2>
+          </div>
+          <button
+            class="modal-close"
+            type="button"
+            aria-label="모달 닫기"
+            onclick="closeAnomalyModal()"
+          >
+            ✕
+          </button>
+        </header>
+
+        <div class="modal-body">
+          <div class="modal-summary-grid">
+            <div class="modal-summary-item">
+              <span class="modal-summary-label">진단 대상 부품</span
+              ><span class="modal-summary-value" id="modal-component">—</span>
+            </div>
+            <div class="modal-summary-item">
+              <span class="modal-summary-label">상태 판정</span
+              ><span class="modal-summary-value" id="modal-state">—</span>
+            </div>
+            <div class="modal-summary-item">
+              <span class="modal-summary-label">예측 신뢰도</span
+              ><span
+                class="modal-summary-value mono accent"
+                id="modal-confidence"
+                >—</span
+              >
+            </div>
+            <div class="modal-summary-item">
+              <span class="modal-summary-label">갱신 시각</span
+              ><span class="modal-summary-value mono" id="modal-time">—</span>
+            </div>
+          </div>
+
+          <section>
+            <div class="modal-section-title">
+              <h3>AI 판단 근거 (SHAP FEATURE IMPORTANCE)</h3>
+              <span>상위 기여 인자</span>
+            </div>
+            <div class="factor-list" id="modal-factors">
+              <div class="empty-state compact">영향 센서 정보 대기 중</div>
+            </div>
+          </section>
+
+          <section>
+            <div class="modal-section-title caution">
+              <h3>권장 점검 항목</h3>
+              <span id="modal-station">STATION-01</span>
+            </div>
+            <div class="check-list" id="modal-checks"></div>
+          </section>
+
+          <p class="modal-note">
+            ※ AI 결과는 점검 우선순위를 돕기 위한 참고 정보입니다. 실제 정비
+            판단은 센서 원값과 설비 점검 결과를 함께 확인하세요.
+          </p>
+        </div>
+
+        <footer class="modal-footer">
+          <button
+            class="modal-button"
+            type="button"
+            onclick="closeAnomalyModal()"
+          >
+            닫기
+          </button>
+          <button
+            class="modal-button primary"
+            type="button"
+            onclick="focusPrimaryFactor()"
+          >
+            상세 보기 (센서 분석) →
+          </button>
+        </footer>
+      </section>
+    </div>
+
+    <script>
+      // ==================== 핵심 실행 설정 ====================
+      // FastAPI 연결 주소. 현재 로컬 개발 구조에 맞춘 값이므로 디자인 수정만 할 때는 변경하지 않는다.
+      const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
+      // FastAPI 최신 상태를 1초마다 다시 조회한다.
+      const POLL_INTERVAL_MS = 1000;
+      // 차트에 유지할 최대 시점 개수(설비별/센서별 이력).
+      const MAX_HISTORY = 30;
+      const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지연"으로 간주
+
+      // ---------- Unity WebGL 연동 설정 ----------
+      // Build 폴더를 web/index.html과 같은 위치(web/Build/)에 복사해서 넣어야 함.
+      // 실제 파일명: pro-build.loader.js, pro-build.data.gz, pro-build.framework.js.gz, pro-build.wasm.gz
+      const UNITY_BUILD_FOLDER = "Build";
+      const UNITY_OBJECT_NAME = "_App";
+      // 같은 오브젝트의 내부 상태 처리 함수와 충돌하지 않는 웹 전용 진입점.
+      const UNITY_METHOD_NAME = "ApplyWebState";
+      const UNITY_CLEAR_METHOD = "ClearState";
+      let unityInstance = null;
+
+      // ==================== 센서/부품 메타데이터 ====================
+      // 화면, 차트, 기준범위 검증에서 공통으로 사용하는 17개 센서 순서.
+      const SENSOR_ORDER = [
+        "PS1",
+        "PS2",
+        "PS3",
+        "PS4",
+        "PS5",
+        "PS6",
+        "EPS1",
+        "FS1",
+        "FS2",
+        "TS1",
+        "TS2",
+        "TS3",
+        "TS4",
+        "VS1",
+        "CE",
+        "CP",
+        "SE",
+      ];
+      const SENSOR_UNITS = {
+        PS1: "bar",
+        PS2: "bar",
+        PS3: "bar",
+        PS4: "bar",
+        PS5: "bar",
+        PS6: "bar",
+        EPS1: "W",
+        FS1: "l/min",
+        FS2: "l/min",
+        TS1: "°C",
+        TS2: "°C",
+        TS3: "°C",
+        TS4: "°C",
+        VS1: "mm/s",
+        CE: "%",
+        CP: "kW",
+        SE: "%",
+      };
+
+      const RISK_LABEL = {
+        normal: "정상",
+        caution: "주의",
+        warning: "경고",
+        danger: "위험",
+      };
+      const COMPONENT_LABEL = {
+        pump: "펌프",
+        valve: "밸브",
+        cooler: "냉각기",
+        accumulator: "축압기",
+      };
+      const COMPONENT_ORDER = ["cooler", "valve", "pump", "accumulator"];
+      const SENSOR_KIND = {
+        PS1: "압력",
+        PS2: "압력",
+        PS3: "압력",
+        PS4: "압력",
+        PS5: "압력",
+        PS6: "압력",
+        EPS1: "전력",
+        FS1: "유량",
+        FS2: "유량",
+        TS1: "온도",
+        TS2: "온도",
+        TS3: "온도",
+        TS4: "온도",
+        VS1: "진동",
+        CE: "냉각효율",
+        CP: "냉각출력",
+        SE: "효율계수",
+      };
+      let sensorExpanded = false;
+
+      // ==================== UI 공통 보조 함수 ====================
+      // 위험도 CSS 클래스, 상태 한글화, 센서값 유효성, 상승/하락 추이 등을 계산한다.
+      function riskClass(level) {
+        return ["normal", "caution", "warning", "danger"].includes(level)
+          ? level
+          : "normal";
+      }
+
+      function statusText(level) {
+        return RISK_LABEL[level] || level || "대기";
+      }
+
+      function isValidSensorValue(value) {
+        // null/undefined/빈 문자열을 0으로 오인하지 않고 실제 숫자만 유효값으로 사용한다.
+        return (
+          value !== null &&
+          value !== undefined &&
+          value !== "" &&
+          Number.isFinite(Number(value))
+        );
+      }
+
+      function latestTrend(name) {
+        const values = (currentHistory().sensors[name] || [])
+          .filter(isValidSensorValue)
+          .map(Number);
+        if (values.length < 2)
+          return { symbol: "→", label: "유지", className: "flat" };
+        const diff = values.at(-1) - values.at(-2);
+        const base = Math.max(Math.abs(values.at(-2)), 1);
+        if (Math.abs(diff) / base < 0.002)
+          return { symbol: "→", label: "유지", className: "flat" };
+        return diff > 0
+          ? { symbol: "↑", label: "상승", className: "up" }
+          : { symbol: "↓", label: "하락", className: "down" };
+      }
+
+      function sensorNameFromFeature(feature) {
+        if (!feature) return null;
+        const text = String(feature).toUpperCase();
+        // PS2_mean, FS1_std, mean_PS2처럼 통계 특징명이 와도 원 센서명을 찾아준다.
+        return (
+          SENSOR_ORDER.find((sensor) => {
+            const escaped = sensor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            return new RegExp(`(^|[^A-Z0-9])${escaped}([^A-Z0-9]|$)`).test(
+              text,
+            );
+          }) || null
+        );
+      }
+
+      function toggleSensorTable() {
+        sensorExpanded = !sensorExpanded;
+        const btn = document.getElementById("sensor-toggle-btn");
+        if (btn)
+          btn.textContent = sensorExpanded
+            ? "[ 주요 센서만 보기 ]"
+            : "[ 전체 17개 센서 보기 ]";
+        if (lastPayload)
+          renderTelemetry(pickEquipmentData(lastPayload).sensors || {});
+      }
+
+      // ==================== 부품별 권장 점검 문구 ====================
+      // 모달에서 이상 부품에 맞는 점검 항목을 보여주기 위한 화면용 가이드 문구.
+      const CHECK_GUIDE = {
+        accumulator: [
+          "축압기 질소 충전 압력 및 기밀 상태 확인",
+          "관련 유압 배관·연결 포트 누유 여부 점검",
+          "압력 센서 신호선 결선 및 오프셋 상태 확인",
+          "이상 지속 시 축압기와 연결 라인의 정밀 점검",
+        ],
+        pump: [
+          "펌프 흡입·토출 압력과 유량 변화 확인",
+          "외부/내부 누설 및 씰 상태 점검",
+          "진동·소음 증가와 모터 전력 변화 확인",
+          "이상 지속 시 펌프 마모 및 배관 계통 정밀 점검",
+        ],
+        valve: [
+          "밸브 응답 지연 및 개폐 동작 상태 확인",
+          "스풀 고착·오염 및 유압유 상태 점검",
+          "밸브 전후단 압력·유량 변화 확인",
+          "이상 지속 시 제어 신호와 밸브 본체 정밀 점검",
+        ],
+        cooler: [
+          "냉각기 입·출구 온도와 냉각 효율 확인",
+          "열교환기 오염·막힘 및 냉각 유량 점검",
+          "온도 센서와 냉각 계통 연결 상태 확인",
+          "이상 지속 시 냉각기 성능 및 순환 라인 정밀 점검",
+        ],
+      };
+
+      // ==================== 이상 상세 모달 데이터 처리 ====================
+      // 현재 선택 설비의 AI 예측을 가져오고, 가장 심각한 이상(danger > warning > caution)을 대표 이상으로 고른다.
+      function currentPrediction() {
+        if (!lastPayload) return null;
+        return pickEquipmentData(lastPayload)?.prediction || null;
+      }
+
+      function getPrimaryAnomaly(prediction = currentPrediction()) {
+        if (
+          !prediction ||
+          prediction.status !== "ready" ||
+          !prediction.components
+        )
+          return null;
+        const severity = { danger: 4, warning: 3, caution: 2, normal: 1 };
+        return (
+          COMPONENT_ORDER.filter(
+            (key) =>
+              prediction.components[key] &&
+              prediction.components[key].risk_level !== "normal",
+          )
+            .map((key) => [key, prediction.components[key]])
+            .sort(
+              (a, b) =>
+                (severity[b[1].risk_level] || 0) -
+                (severity[a[1].risk_level] || 0),
+            )[0] || null
+        );
+      }
+
+      function factorMagnitude(factor) {
+        for (const key of [
+          "contribution",
+          "importance",
+          "impact",
+          "shap_value",
+          "value",
+        ]) {
+          const n = Number(factor?.[key]);
+          if (Number.isFinite(n)) return Math.abs(n);
+        }
+        return null;
+      }
+
+      // SHAP/top_sensors/top_factors 중 상위 3개를 모달의 기여도 막대로 표시한다.
+      function renderModalFactors(component) {
+        const box = document.getElementById("modal-factors");
+        if (!box) return;
+        const factors = (
+          component?.top_sensors ||
+          component?.top_factors ||
+          []
+        ).slice(0, 3);
+        if (!factors.length) {
+          box.innerHTML =
+            '<div class="empty-state compact">영향 센서 정보가 없습니다.</div>';
+          return;
+        }
+        const mags = factors.map(factorMagnitude);
+        const finite = mags.filter((v) => Number.isFinite(v));
+        const total = finite.reduce((a, b) => a + b, 0);
+        const max = finite.length ? Math.max(...finite) : 0;
+        box.innerHTML = factors
+          .map((f, i) => {
+            const sensor =
+              f.sensor || f.feature || f.name || `영향 인자 ${i + 1}`;
+            const mag = mags[i];
+            const pct =
+              Number.isFinite(mag) && total > 0 ? (mag / total) * 100 : null;
+            const width =
+              Number.isFinite(mag) && max > 0
+                ? Math.max(12, (mag / max) * 100)
+                : [92, 66, 45][i] || 35;
+            const score =
+              pct === null ? `상위 영향 #${i + 1}` : `${pct.toFixed(1)}% 기여`;
+            return `<div class="factor-row">
+      <div class="factor-head"><span class="factor-name">${i + 1}. ${sensor}</span><span class="factor-score">${score}</span></div>
+      <div class="factor-track"><div class="factor-fill" style="width:${width.toFixed(1)}%"></div></div>
+    </div>`;
+          })
+          .join("");
+      }
+
+      // 현재 대표 이상 데이터를 모달의 부품/상태/신뢰도/시간/영향센서/점검항목에 채운다.
+      function populateAnomalyModal(prediction = currentPrediction()) {
+        const found = getPrimaryAnomaly(prediction);
+        if (!found) return false;
+        const [key, component] = found;
+        const level = riskClass(component.risk_level);
+        const confidence = Number(component.confidence);
+        const data = lastPayload ? pickEquipmentData(lastPayload) : null;
+        const timeSource =
+          data?.generated_at ||
+          data?.updated_at ||
+          lastPayload?.generated_at ||
+          lastPayload?.updated_at;
+        const dt = timeSource ? new Date(timeSource) : null;
+
+        document.getElementById("modal-component").textContent =
+          `${COMPONENT_LABEL[key]} (${key})`;
+        const stateEl = document.getElementById("modal-state");
+        stateEl.textContent = statusText(level);
+        stateEl.style.color = `var(--${level})`;
+        document.getElementById("modal-confidence").textContent =
+          Number.isFinite(confidence)
+            ? `${(confidence * 100).toFixed(1)}%`
+            : "—";
+        document.getElementById("modal-time").textContent =
+          dt && Number.isFinite(dt.getTime())
+            ? dt.toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false,
+              })
+            : "—";
+        document.getElementById("modal-station").textContent =
+          selectedEquipmentId.toUpperCase();
+
+        renderModalFactors(component);
+        const checks = CHECK_GUIDE[key] || [
+          "설비 상태와 영향 센서를 기준으로 현장 점검을 진행하세요.",
+        ];
+        document.getElementById("modal-checks").innerHTML = checks
+          .map(
+            (text, i) =>
+              `<div class="check-row ${i === checks.length - 1 ? "emphasis" : ""}"><span class="check-bullet">•</span><span>${text}</span></div>`,
+          )
+          .join("");
+        return true;
+      }
+
+      // 이상이 있을 때만 모달을 연다. 열리면 body 스크롤을 막고 뒤 화면은 CSS backdrop-filter로 흐려진다.
+      function openAnomalyModal() {
+        if (!populateAnomalyModal()) return;
+        const modal = document.getElementById("anomaly-modal");
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        modal.querySelector(".modal-dialog")?.focus();
+      }
+
+      // X/닫기/ESC/바깥영역 클릭 시 모달을 닫는다.
+      function closeAnomalyModal() {
+        const modal = document.getElementById("anomaly-modal");
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+      }
+
+      // 모달의 "상세 보기" 클릭 시 최상위 영향 특징(예: PS2_mean)을 실제 센서(PS2)로 변환해 차트로 이동한다.
+      function focusPrimaryFactor() {
+        const found = getPrimaryAnomaly();
+        const top =
+          found?.[1]?.top_sensors?.[0]?.sensor ||
+          found?.[1]?.top_factors?.[0]?.feature;
+        const sensorName = sensorNameFromFeature(top);
+        closeAnomalyModal();
+        if (sensorName) selectSensor(sensorName);
+        document
+          .querySelector(".trend-card")
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeAnomalyModal();
+      });
+      window.addEventListener("click", (e) => {
+        const modal = document.getElementById("anomaly-modal");
+        if (modal?.classList.contains("open") && e.target === modal)
+          closeAnomalyModal();
+      });
+
+      // ==================== 설비 선택 및 설비별 이력 ====================
+      // Unity 3D에서 station-01~03 중 하나를 선택하면 웹의 센서/AI/차트도 같은 설비로 전환된다.
+      const EQUIPMENT_IDS = ["station-01", "station-02", "station-03"];
+      let selectedEquipmentId = "station-01";
+
+      let receivedCount = 0; // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
+      let chart = null;
+      let referenceBands = null;
+      let bandLoadFailed = false;
+      let lastEventId = null;
+      let lastChangeAt = Date.now();
+
+      // 설비별 × 센서별로 이력을 따로 쌓아둔다.
+      // 설비나 센서를 바꿔도 그동안 쌓인 이력이 그대로 보이도록 하기 위함.
+      const histories = {};
+      // 설비별로 차트 라벨, 17개 센서 이력, 기준범위 연속 이탈 상태를 별도로 보관한다.
+      function makeHistory() {
+        const h = { labels: [], sensors: {}, bandState: null };
+        SENSOR_ORDER.forEach((name) => {
+          h.sensors[name] = [];
         });
-      } else updateChart(data);
+        return h;
+      }
+      EQUIPMENT_IDS.forEach((id) => {
+        histories[id] = makeHistory();
+      });
 
-      // Unity에는 원본 응답을 그대로 전달 (설비 3대를 Unity가 각각 처리하도록)
-      sendToUnity(payload);
-      unityCleared = false;
-    }
-    // 메시지가 멈춘 설비의 stale 상태도 Unity에 전달한다.
-    if (!isNewEvent && Array.isArray(payload.equipment_states)) sendToUnity(payload);
+      function currentHistory(id = selectedEquipmentId) {
+        if (!histories[id]) histories[id] = makeHistory();
+        return histories[id];
+      }
 
-    renderTelemetry(data.sensors);
-    renderDiagnosis(data.prediction);
-    updateHeader(data);
-  } catch (err) {
-    document.getElementById("conn-text").textContent = "API 연결 실패";
-    document.getElementById("conn-dot").classList.remove("live");
-    if (!unityCleared){ clearUnity(); unityCleared = true; }
-    console.error("poll error:", err);
-  } finally {
-    // 연결 실패 시 마지막 경고를 현재 판단처럼 남기지 않는다.
-    const state = currentHistory().bandState;
-    if (lastPayload && (!state || Date.now()-state.stamp >= STALE_MS)) renderTelemetry(pickEquipmentData(lastPayload).sensors);
-    redrawChart();
-  }
-}
+      let selectedSensor = "CE"; // 기본으로 보여줄 센서
 
-function loadUnity(){
-  const statusEl = document.getElementById("unity-status");
-  const canvas = document.getElementById("unity-canvas");
-  const buildFolder = UNITY_BUILD_FOLDER;
-  // 새 빌드와 이전 브라우저 캐시의 파일이 섞이지 않도록 같은 버전을 붙인다.
-  const buildVersion = '20260903-ai-labels-2';
-  const loaderUrl = `${buildFolder}/pro-build.loader.js?v=${buildVersion}`;
+      function fmtNum(n, digits = 1) {
+        return Number(n).toLocaleString("ko-KR", {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        });
+      }
 
-  const config = {
-    dataUrl: `${buildFolder}/pro-build.data.gz?v=${buildVersion}`,
-    frameworkUrl: `${buildFolder}/pro-build.framework.js.gz?v=${buildVersion}`,
-    codeUrl: `${buildFolder}/pro-build.wasm.gz?v=${buildVersion}`,
-    streamingAssetsUrl: "StreamingAssets",
-    companyName: "HydroTwin Team",
-    productName: "HydroTwin",
-    productVersion: "0.1",
-    cacheControl: () => 'no-store',
-  };
+      // ==================== 실시간 센서 표 렌더링 ====================
+      // API에서 받은 sensors 객체를 표 행으로 만든다.
+      // 주의: 여기의 "범위 이탈"은 AI 고장 판정이 아니라 reference-bands 기준의 별도 경고다.
+      function renderTelemetry(sensors) {
+        const list = document.getElementById("telemetry-list");
+        if (!list) return;
+        list.innerHTML = "";
 
-  const script = document.createElement("script");
-  script.src = loaderUrl;
-  script.onload = () => {
-    if (typeof createUnityInstance !== "function"){
-      statusEl.textContent = "Unity 로더 스크립트는 불러왔지만 createUnityInstance를 찾을 수 없음";
-      statusEl.classList.add("error");
-      return;
-    }
-    createUnityInstance(canvas, config, (progress) => {
-      statusEl.textContent = `Unity 로딩 중... ${Math.round(progress * 100)}%`;
-    }).then((instance) => {
-      unityInstance = instance;
-      statusEl.classList.add("hidden");
-    }).catch((err) => {
-      statusEl.textContent = "Unity 인스턴스 생성 실패";
-      statusEl.classList.add("error");
-      console.error("createUnityInstance 실패:", err);
-    });
-  };
-  script.onerror = () => {
-    statusEl.textContent = `Unity 빌드 파일을 못 찾음 (${loaderUrl}). web/${UNITY_BUILD_FOLDER}/ 폴더에 빌드 파일이 있는지 확인하세요.`;
-    statusEl.classList.add("error");
-  };
-  document.body.appendChild(script);
-}
+        const available = SENSOR_ORDER.filter(
+          (name) => name in (sensors || {}),
+        );
+        document.getElementById("sensor-count").textContent =
+          `${available.length} 채널 감시 중`;
 
-initChart();
-loadReferenceBands();
-setInterval(() => { if (!referenceBands) loadReferenceBands(); },30000);
-document.getElementById("unit-label").textContent = selectedEquipmentId.toUpperCase();
-loadUnity();
-poll();
-setInterval(poll, POLL_INTERVAL_MS);
-</script>
+        if (available.length === 0) {
+          list.innerHTML = `<tr><td colspan="4" class="table-empty">데이터 수신 대기 중</td></tr>`;
+          return;
+        }
 
-</body>
+        const names = sensorExpanded ? available : available.slice(0, 5);
+        names.forEach((name) => {
+          const bandState = currentHistory().bandState;
+          const warning =
+            bandState &&
+            Date.now() - bandState.stamp < STALE_MS &&
+            bandState.counts[name] >=
+              (referenceBands?.warning_consecutive_samples || 3);
+          const trend = latestTrend(name);
+          const validValue = isValidSensorValue(sensors[name]);
+          const valueText = validValue ? fmtNum(sensors[name]) : "—";
+          const unitText = validValue ? SENSOR_UNITS[name] || "" : "";
+          const stateClass = !validValue
+            ? "waiting"
+            : warning
+              ? "caution"
+              : "normal";
+          const stateText = !validValue
+            ? "대기"
+            : warning
+              ? "범위 이탈"
+              : "정상";
+          const row = document.createElement("tr");
+          row.className =
+            "telemetry-row" +
+            (name === selectedSensor ? " selected" : "") +
+            (warning ? " band-warning" : "");
+          row.setAttribute("role", "button");
+          row.setAttribute("tabindex", "0");
+          row.title =
+            `${name} 추이를 그래프로 보기` +
+            (warning ? " · 기준 범위 이탈" : "");
+          row.innerHTML = `
+      <td class="sensor-name-cell"><span class="name">${name}</span><span class="sensor-kind">${SENSOR_KIND[name] || "센서"}</span></td>
+      <td class="sensor-value-cell"><strong class="val">${valueText}</strong><span class="sensor-unit">${unitText}</span></td>
+      <td class="sensor-state-cell"><span class="sensor-state-badge ${stateClass}">${stateText}</span></td>
+      <td class="sensor-trend-cell ${validValue ? trend.className : "flat"}">${validValue ? trend.symbol : "—"}</td>
+    `;
+          row.addEventListener("click", () => selectSensor(name));
+          row.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              selectSensor(name);
+            }
+          });
+          list.appendChild(row);
+        });
+      }
+
+      // 센서 행을 클릭하면 선택 센서를 바꾸고 하단 Chart.js를 즉시 다시 그린다.
+      function selectSensor(name) {
+        if (selectedSensor === name) return;
+        selectedSensor = name;
+
+        // 목록 전체를 다시 그리지 않고 선택 표시만 교체
+        document
+          .querySelectorAll("#telemetry-list .telemetry-row")
+          .forEach((row) => {
+            const rowName = row.querySelector(".name")
+              ? row.querySelector(".name").textContent
+              : null;
+            row.classList.toggle("selected", rowName === name);
+          });
+
+        redrawChart();
+      }
+
+      // ==================== AI 진단 UI 렌더링 ====================
+      // prediction.components를 이용해 설비 건전성 바, 이상 알림 배너, 우측 AI 진단, 모달 버튼 상태를 갱신한다.
+      // 데이터가 없는 부품은 정상으로 가정하지 않고 "대기"로 표시한다.
+      function renderDiagnosis(prediction) {
+        const detail = document.getElementById("diag-list");
+        const healthGrid = document.getElementById("component-health-grid");
+        const alertBanner = document.getElementById("alert-banner");
+        const alertCount = document.getElementById("alert-count");
+        const alertSummary = document.getElementById("alert-summary");
+        const alertStation = document.getElementById("alert-station-tag");
+        const twinBadge = document.getElementById("twin-alert-badge");
+        const aiInsight = document.getElementById("ai-insight");
+        const modelLabel = document.getElementById("model-label");
+        const detailButton = document.getElementById("anomaly-detail-btn");
+
+        const ready =
+          prediction &&
+          prediction.status === "ready" &&
+          prediction.components &&
+          Object.keys(prediction.components).length > 0;
+
+        if (!ready) {
+          const message =
+            prediction?.status === "stale"
+              ? "해당 설비 데이터 지연 · 예측 갱신 대기"
+              : prediction?.status === "waiting"
+                ? "해당 설비 데이터 수신 대기"
+                : `AI 예측 준비 중 (${prediction?.observed_window_sec || 0}/10초)`;
+          if (detail)
+            detail.innerHTML = `<div class="empty-state compact">${message}</div>`;
+          if (healthGrid)
+            healthGrid.innerHTML = COMPONENT_ORDER.map(
+              (key) => `
+      <div class="health-item waiting"><span class="health-name">${COMPONENT_LABEL[key]}</span><span class="health-state">대기</span></div>`,
+            ).join("");
+          if (alertBanner) {
+            alertBanner.className = "alert-banner waiting";
+          }
+          if (alertCount) alertCount.textContent = "AI 예측 대기";
+          if (alertSummary) alertSummary.textContent = message;
+          if (alertStation)
+            alertStation.textContent = selectedEquipmentId.toUpperCase();
+          if (twinBadge) {
+            twinBadge.className = "twin-badge waiting";
+            twinBadge.textContent = "AI 상태 대기";
+          }
+          if (aiInsight) aiInsight.textContent = message;
+          if (detailButton) detailButton.disabled = true;
+          if (
+            document.getElementById("anomaly-modal")?.classList.contains("open")
+          )
+            closeAnomalyModal();
+          return;
+        }
+
+        const components = prediction.components;
+        const presentKeys = COMPONENT_ORDER.filter((key) => components[key]);
+        const missingKeys = COMPONENT_ORDER.filter((key) => !components[key]);
+        const anomalies = presentKeys
+          .filter(
+            (key) =>
+              components[key].risk_level &&
+              components[key].risk_level !== "normal",
+          )
+          .map((key) => [key, components[key]]);
+
+        // 부품 데이터가 없으면 "정상"으로 추정하지 않고 "대기"로 표시한다.
+        if (healthGrid) {
+          healthGrid.innerHTML = COMPONENT_ORDER.map((key) => {
+            const c = components[key];
+            if (!c) {
+              return `<div class="health-item waiting">
+          <span class="health-name">${COMPONENT_LABEL[key]}</span>
+          <span class="health-result"><span class="health-dot waiting"></span><span class="health-state waiting">대기</span><strong>—</strong></span>
+        </div>`;
+            }
+            const level = riskClass(c.risk_level);
+            const confidence = Number.isFinite(Number(c.confidence))
+              ? `${(Number(c.confidence) * 100).toFixed(1)}%`
+              : "—";
+            return `<div class="health-item ${level}">
+        <span class="health-name">${COMPONENT_LABEL[key]}</span>
+        <span class="health-result"><span class="health-dot ${level}"></span><span class="health-state ${level}">${statusText(level)}</span><strong>${confidence}</strong></span>
+      </div>`;
+          }).join("");
+        }
+
+        if (anomalies.length === 0) {
+          if (missingKeys.length === 0) {
+            if (alertBanner) alertBanner.className = "alert-banner normal";
+            if (alertCount) alertCount.textContent = "현재 활성 이상 없음";
+            if (alertSummary)
+              alertSummary.textContent =
+                "4개 주요 부품이 정상 범위로 판별되었습니다.";
+            if (alertStation)
+              alertStation.textContent = `${selectedEquipmentId.toUpperCase()} NORMAL`;
+            if (twinBadge) {
+              twinBadge.className = "twin-badge normal";
+              twinBadge.textContent = "● 설비 상태 정상";
+            }
+            if (detail)
+              detail.innerHTML = `<div class="normal-detail"><span class="health-dot normal"></span><strong>활성 이상 없음</strong><p>현재 AI 진단에서 점검이 필요한 부품이 없습니다.</p></div>`;
+            if (aiInsight)
+              aiInsight.textContent =
+                "현재 유압 시스템의 주요 센서 지표와 부품 상태가 정상 범위에서 안정적으로 관측되고 있습니다.";
+          } else {
+            const missingNames = missingKeys
+              .map((key) => COMPONENT_LABEL[key])
+              .join(", ");
+            if (alertBanner) alertBanner.className = "alert-banner waiting";
+            if (alertCount)
+              alertCount.textContent = "현재 활성 이상 없음 · 일부 데이터 대기";
+            if (alertSummary)
+              alertSummary.textContent = `수신된 부품은 정상입니다. ${missingNames} 데이터는 대기 중입니다.`;
+            if (alertStation)
+              alertStation.textContent = `${selectedEquipmentId.toUpperCase()} WAITING`;
+            if (twinBadge) {
+              twinBadge.className = "twin-badge waiting";
+              twinBadge.textContent = "일부 부품 데이터 대기";
+            }
+            if (detail)
+              detail.innerHTML = `<div class="empty-state compact">수신된 부품은 정상 · ${missingNames} 데이터 대기 중</div>`;
+            if (aiInsight)
+              aiInsight.textContent = `현재 수신된 부품에서는 이상이 감지되지 않았습니다. ${missingNames} 데이터가 도착하면 전체 상태를 다시 판별합니다.`;
+          }
+          if (detailButton) detailButton.disabled = true;
+          if (
+            document.getElementById("anomaly-modal")?.classList.contains("open")
+          )
+            closeAnomalyModal();
+        } else {
+          // 메인 알림과 모달 모두 같은 규칙(danger > warning > caution)으로 대표 이상을 선택한다.
+          const primary = getPrimaryAnomaly(prediction) || anomalies[0];
+          const [key, c] = primary;
+          const level = riskClass(c.risk_level);
+          const factor =
+            (c.top_sensors || [])[0]?.sensor ||
+            (c.top_factors || [])[0]?.feature ||
+            "주요 센서";
+          const label = `${COMPONENT_LABEL[key]} ${statusText(level)}`;
+          if (alertBanner) alertBanner.className = `alert-banner ${level}`;
+          if (alertCount)
+            alertCount.textContent = `⚠ 이상 감지 ${anomalies.length}건`;
+          if (alertSummary)
+            alertSummary.innerHTML = `<strong>${label}</strong> · <span>${factor} 패턴 변화 감지</span>`;
+          if (alertStation)
+            alertStation.textContent = `${selectedEquipmentId.toUpperCase()} ATTENTION`;
+          if (twinBadge) {
+            twinBadge.className = `twin-badge ${level}`;
+            twinBadge.textContent = `● ${label} 감지`;
+          }
+          if (detail) {
+            detail.innerHTML = anomalies
+              .map(([componentKey, component]) => {
+                const lv = riskClass(component.risk_level);
+                const top =
+                  (component.top_sensors || [])
+                    .map((s) => s.sensor)
+                    .filter(Boolean)
+                    .slice(0, 3)
+                    .join(", ") ||
+                  (component.top_factors || [])
+                    .map((f) => f.feature || f.name)
+                    .filter(Boolean)
+                    .slice(0, 3)
+                    .join(", ") ||
+                  "—";
+                const confidence = Number.isFinite(Number(component.confidence))
+                  ? `${(Number(component.confidence) * 100).toFixed(1)}%`
+                  : "—";
+                return `<div class="anomaly-card ${lv}">
+          <div class="anomaly-card-head"><span><span class="health-dot ${lv}"></span>${COMPONENT_LABEL[componentKey]}</span><span class="sensor-state-badge ${lv}">${statusText(lv)}</span></div>
+          <p>분류 <strong>${component.state ?? "—"}</strong> · 예측 확률 <strong>${confidence}</strong></p>
+          <p>주요 영향 센서: <strong>${top}</strong></p>
+        </div>`;
+              })
+              .join("");
+          }
+          if (aiInsight)
+            aiInsight.textContent = `${COMPONENT_LABEL[key]}에서 ${statusText(level)} 상태가 감지되었습니다. ${factor}를 포함한 영향 센서 추이와 설비 상태를 함께 확인하세요.`;
+          if (detailButton) detailButton.disabled = false;
+          if (
+            document.getElementById("anomaly-modal")?.classList.contains("open")
+          )
+            populateAnomalyModal(prediction);
+        }
+
+        if (modelLabel) {
+          modelLabel.textContent = prediction.model_name
+            ? `모델: ${prediction.model_name}`
+            : "AI 상태 분류 + 영향 센서 분석";
+        }
+      }
+
+      // ==================== 헤더/연결 상태 갱신 ====================
+      // cycle_id, 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
+      // 연결 상태와 AI 설비 위험도는 분리해서 표현한다.
+      function updateHeader(data) {
+        document.getElementById("cycle-id").textContent =
+          data.cycle_id ?? data.event_id ?? "—";
+        document.getElementById("elapsed-sec").textContent =
+          data.elapsed_sec ?? "—";
+
+        if (data.generated_at) {
+          const generatedAt = new Date(data.generated_at);
+          const ageSec = Math.max(
+            0,
+            Math.round((Date.now() - generatedAt.getTime()) / 1000),
+          );
+          document.getElementById("update-age").textContent = `${ageSec}초 전`;
+          const timeEl = document.getElementById("alert-time");
+          if (timeEl && Number.isFinite(generatedAt.getTime())) {
+            timeEl.textContent = generatedAt.toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false,
+            });
+          }
+        } else {
+          document.getElementById("update-age").textContent = "—";
+        }
+
+        const dot = document.getElementById("conn-dot");
+        const text = document.getElementById("conn-text");
+        const statusBadge = document.getElementById("connection-badge");
+        const sourceTime = Date.parse(
+          data.generated_at || data.updated_at || "",
+        );
+        const stalled =
+          Date.now() - lastChangeAt > STALE_MS ||
+          !Number.isFinite(sourceTime) ||
+          Date.now() - sourceTime > STALE_MS;
+
+        dot.classList.remove("live", "risk-danger");
+        statusBadge?.classList.remove("normal", "danger", "waiting");
+
+        // 연결 배지는 API/Kafka 데이터 수신 상태만 나타낸다.
+        // AI의 주의/경고/위험 판정은 아래 이상 알림 배너와 설비 건전성 영역에서 별도로 표시한다.
+        if (stalled) {
+          text.textContent = "데이터 지연";
+          statusBadge?.classList.add("waiting");
+          if (!Array.isArray(lastPayload?.equipment_states) && !unityCleared) {
+            clearUnity();
+            unityCleared = true;
+          }
+        } else {
+          dot.classList.add("live");
+          statusBadge?.classList.add("normal");
+          text.textContent =
+            data.prediction &&
+            (data.prediction.status === "warming_up" ||
+              data.prediction.status === "waiting")
+              ? "정상 수신 중 (AI 대기)"
+              : "시스템 연결 정상";
+        }
+      }
+
+      // ==================== 차트 이력 적재 ====================
+      // 새 이벤트가 들어올 때 설비별 센서 이력을 추가한다. run/segment가 바뀌면 이전 구간과 선을 연결하지 않는다.
+      function updateChart(data, equipmentId = selectedEquipmentId) {
+        const history = currentHistory(equipmentId);
+        const previous = history.bandState;
+        if (
+          previous &&
+          previous.run === data.run_id &&
+          previous.event === data.event_id
+        )
+          return;
+        // 생성 초기값이 달라진 구간을 하나의 연속 그래프로 연결하지 않는다.
+        if (
+          previous &&
+          (previous.run !== data.run_id || previous.segment !== data.segment_id)
+        ) {
+          history.labels = [];
+          SENSOR_ORDER.forEach((name) => (history.sensors[name] = []));
+        } else if (
+          previous &&
+          (data.event_id !== previous.event + 1 ||
+            Date.parse(data.generated_at || data.updated_at) - previous.stamp >
+              2000)
+        ) {
+          history.labels.push("수신 공백");
+          SENSOR_ORDER.forEach((name) => history.sensors[name].push(null));
+        }
+        history.bandState = SensorBands.advance(
+          previous,
+          data,
+          referenceBands,
+          SENSOR_ORDER,
+        );
+        history.labels.push(`#${data.event_id}`);
+        SENSOR_ORDER.forEach((name) => {
+          // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
+          history.sensors[name].push(
+            data.sensors && name in data.sensors ? data.sensors[name] : null,
+          );
+        });
+
+        while (history.labels.length > MAX_HISTORY) {
+          history.labels.shift();
+          SENSOR_ORDER.forEach((name) => history.sensors[name].shift());
+        }
+
+        redrawChart();
+      }
+
+      // 현재 선택 센서의 이력, 정상범위 상/하한, 현재값, 최근 평균, 변화 방향을 Chart.js에 반영한다.
+      function redrawChart() {
+        if (!chart) return;
+        const history = currentHistory();
+        const unit = SENSOR_UNITS[selectedSensor] || "";
+
+        chart.data.labels = history.labels;
+        chart.data.datasets[0].label = unit
+          ? `${selectedSensor} (${unit})`
+          : selectedSensor;
+        chart.data.datasets[0].data = history.sensors[selectedSensor] || [];
+        const band = referenceBands?.sensors?.[selectedSensor];
+        chart.data.datasets[1].data = history.labels.map(() =>
+          band ? band.lower : null,
+        );
+        chart.data.datasets[2].data = history.labels.map(() =>
+          band ? band.upper : null,
+        );
+        chart.update("none");
+        const info = document.getElementById("band-info");
+        const state = history.bandState;
+        const values = history.sensors[selectedSensor] || [];
+        const count = state?.counts[selectedSensor] || 0;
+        const stale =
+          !state ||
+          !Number.isFinite(state.stamp) ||
+          Date.now() - state.stamp >= STALE_MS;
+        const isOutside = SensorBands.outside(values.at(-1), band);
+        const warning =
+          !stale &&
+          isOutside === true &&
+          count >= (referenceBands?.warning_consecutive_samples || 3);
+        info.classList.toggle("warning", warning);
+        if (!band)
+          info.textContent = bandLoadFailed
+            ? "기준 범위 준비 실패 · 범위 판단 중지"
+            : "정상 운전 기준 범위 불러오는 중";
+        else {
+          const status = stale
+            ? "수신 대기·지연 — 현재 범위 판단 중지"
+            : isOutside === null
+              ? "유효한 센서값 없음"
+              : warning
+                ? `기준 범위 이탈 경고 · ${count}개 연속`
+                : isOutside
+                  ? `범위 이탈 관측 · ${count}/3개`
+                  : "기준 범위 내";
+          info.textContent = `${selectedSensor} 기준 ${fmtNum(band.lower, 3)} ~ ${fmtNum(band.upper, 3)} ${unit} · ${status}`;
+        }
+
+        const titleEl = document.getElementById("chart-title");
+        if (titleEl) {
+          titleEl.textContent = unit
+            ? `${selectedSensor} 추이 (${unit})`
+            : `${selectedSensor} 추이`;
+        }
+        const selectorLabel = document.getElementById("sensor-selector-label");
+        if (selectorLabel)
+          selectorLabel.textContent = unit
+            ? `${selectedSensor} (${unit})`
+            : selectedSensor;
+        const rawValues = history.sensors[selectedSensor] || [];
+        const windowSize = Math.max(1, Math.round(predictionWindowSec()));
+        const latestRaw = rawValues.at(-1);
+        const latest = isValidSensorValue(latestRaw) ? Number(latestRaw) : null;
+        // 화면의 "최근 평균"은 AI 관측 윈도우와 동일한 최근 N초 값만 사용한다.
+        const recentValues = rawValues
+          .slice(-windowSize)
+          .filter(isValidSensorValue)
+          .map(Number);
+        const average = recentValues.length
+          ? recentValues.reduce((a, b) => a + b, 0) / recentValues.length
+          : null;
+        const trend = latestTrend(selectedSensor);
+        const currentEl = document.getElementById("trend-current");
+        const avgEl = document.getElementById("trend-average");
+        const dirEl = document.getElementById("trend-direction");
+        const windowEl = document.getElementById("trend-window");
+        if (currentEl)
+          currentEl.textContent =
+            latest == null ? "—" : `${fmtNum(latest, 1)} ${unit}`;
+        if (avgEl)
+          avgEl.textContent =
+            average == null ? "—" : `${fmtNum(average, 1)} ${unit}`;
+        if (dirEl) {
+          dirEl.textContent =
+            latest == null ? "—" : `${trend.symbol} ${trend.label}`;
+          dirEl.className = `trend-value ${latest == null ? "flat" : trend.className}`;
+        }
+        if (windowEl) windowEl.textContent = `${windowSize}초`;
+      }
+
+      // API가 알려주는 observed_window_sec를 사용하고 값이 없으면 10초를 기본값으로 사용한다.
+      function predictionWindowSec() {
+        const view = lastPayload ? pickEquipmentData(lastPayload) : null;
+        return Number(view?.prediction?.observed_window_sec || 10);
+      }
+
+      // ==================== Chart.js 초기 생성 ====================
+      // 실제 센서 선 1개 + 기준 하한 + 정상 운전 기준 범위 음영을 구성한다.
+      function initChart() {
+        const ctx = document.getElementById("trend-chart").getContext("2d");
+        chart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: selectedSensor,
+                data: [],
+                borderColor: "#2fe0c4",
+                backgroundColor: "rgba(47,224,196,0.08)",
+                borderWidth: 2,
+                pointRadius: (ctx) =>
+                  SensorBands.outside(
+                    ctx.raw,
+                    referenceBands?.sensors?.[selectedSensor],
+                  )
+                    ? 3
+                    : 0,
+                pointBackgroundColor: "#ffab55",
+                pointBorderColor: "#ffab55",
+                segment: {
+                  borderColor: (ctx) =>
+                    [ctx.p0.parsed.y, ctx.p1.parsed.y].some((v) =>
+                      SensorBands.outside(
+                        v,
+                        referenceBands?.sensors?.[selectedSensor],
+                      ),
+                    )
+                      ? "#ffab55"
+                      : "#2fe0c4",
+                },
+                tension: 0,
+                fill: false,
+                spanGaps: false,
+                order: 0,
+              },
+              {
+                label: "기준 하한",
+                data: [],
+                borderColor: "rgba(80,190,150,.5)",
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: false,
+                order: 2,
+              },
+              {
+                label: "정상 운전 기준 범위",
+                data: [],
+                borderColor: "rgba(80,190,150,.5)",
+                backgroundColor: "rgba(80,190,150,.15)",
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: 1,
+                order: 2,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              tooltip: { filter: (item) => item.datasetIndex === 0 },
+              legend: {
+                onClick: () => {},
+                labels: {
+                  filter: (item) => item.datasetIndex !== 1,
+                  color: "#7c8e9c",
+                  font: { family: "IBM Plex Mono", size: 11 },
+                  boxWidth: 10,
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: "#4d5c68",
+                  font: { family: "IBM Plex Mono", size: 10 },
+                },
+                grid: { color: "#1a2530" },
+              },
+              y: {
+                ticks: { color: "#4d5c68", font: { size: 10 } },
+                grid: { color: "#1a2530" },
+              },
+            },
+          },
+        });
+        redrawChart();
+      }
+
+      // ==================== 센서 정상 운전 기준 범위 API ====================
+      // /api/v1/sensors/reference-bands에서 17개 센서의 lower/upper 값을 받아 차트 음영과 범위 이탈 판정에 사용한다.
+      async function loadReferenceBands() {
+        try {
+          const response = await fetch(
+            `${API_BASE}/api/v1/sensors/reference-bands`,
+          );
+          if (!response.ok) throw new Error("기준 범위 응답 오류");
+          const value = await response.json();
+          if (
+            !SENSOR_ORDER.every(
+              (s) =>
+                Number.isFinite(value.sensors?.[s]?.lower) &&
+                Number.isFinite(value.sensors?.[s]?.upper),
+            )
+          )
+            throw new Error("센서 기준 누락");
+          referenceBands = value;
+          bandLoadFailed = false;
+          document.getElementById("band-note").textContent =
+            `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
+        } catch (error) {
+          bandLoadFailed = true;
+        }
+        redrawChart();
+      }
+
+      // ==================== Unity WebGL 데이터 전달 ====================
+      // 아래 함수들은 웹 UI 디자인과 무관한 핵심 연동부이므로 Unity/API 규격 변경이 없으면 그대로 유지한다.
+      // FastAPI에서 받은 원본 payload를 Unity _App.ApplyWebState(JSON)로 전달한다.
+      function sendToUnity(payload) {
+        if (!unityInstance) return;
+        try {
+          unityInstance.SendMessage(
+            UNITY_OBJECT_NAME,
+            UNITY_METHOD_NAME,
+            JSON.stringify(payload),
+          );
+        } catch (err) {
+          console.error("Unity SendMessage(ApplyWebState) 실패:", err);
+        }
+      }
+
+      // API 데이터가 끊겼거나 유효 상태가 없을 때 Unity 쪽 표시 상태를 초기화한다.
+      function clearUnity() {
+        if (!unityInstance) return;
+        try {
+          unityInstance.SendMessage(UNITY_OBJECT_NAME, UNITY_CLEAR_METHOD);
+        } catch (err) {
+          console.error("Unity SendMessage(ClearState) 실패:", err);
+        }
+      }
+
+      let unityCleared = false; // 연속으로 여러 번 ClearState를 호출하지 않기 위한 플래그
+      let lastPayload = null; // 설비를 바꿨을 때 즉시 다시 그리기 위해 마지막 응답을 보관
+
+      /**
+       * ==================== 선택 설비 데이터 추출 ====================
+       * API 응답에서 현재 선택된 설비의 데이터만 골라낸다.
+       * - equipment_states 배열이 오면 selectedEquipmentId와 일치하는 항목을 사용
+       * - 설비 배열이 없으면 다른 설비 값으로 대체하지 않고 대기 상태를 사용
+       */
+      function pickEquipmentData(payload) {
+        return EquipmentState.select(payload, selectedEquipmentId);
+      }
+
+      // 설비 선택이 바뀌면 station 라벨, 센서표, AI 진단, 차트를 마지막 수신 데이터로 즉시 다시 표시한다.
+      function renderSelectedEquipment() {
+        const labelEl = document.getElementById("unit-label");
+        if (labelEl) labelEl.textContent = selectedEquipmentId.toUpperCase();
+
+        // 설비를 바꾸면 그 설비의 이력으로 차트를 다시 그린다
+        redrawChart();
+
+        // 마지막으로 받은 데이터가 있으면 즉시 화면 갱신 (다음 폴링까지 기다리지 않도록)
+        if (lastPayload) {
+          const view = pickEquipmentData(lastPayload);
+          renderTelemetry(view.sensors);
+          renderDiagnosis(view.prediction);
+        }
+      }
+
+      // Unity 3D 화면에서 머신을 클릭하면 이 이벤트가 날아온다
+      window.addEventListener("hydrotwin-equipment-selected", (event) => {
+        const id = event.detail && event.detail.equipmentId;
+        if (!id || id === selectedEquipmentId) return;
+        selectedEquipmentId = id;
+        console.log("선택된 설비:", selectedEquipmentId);
+        renderSelectedEquipment();
+      });
+
+      // ==================== 핵심 FastAPI 폴링 루프 ====================
+      // 가장 중요한 연결부. 1초마다 /api/v1/state/latest를 호출해 웹 UI, 차트, Unity를 같은 payload로 갱신한다.
+      // 디자인 수정만 하는 경우 이 함수의 API 호출/데이터 흐름은 가능하면 변경하지 않는다.
+      async function poll() {
+        try {
+          const res = await fetch(`${API_BASE}/api/v1/state/latest`);
+          if (!res.ok) {
+            if (res.status === 503) {
+              document.getElementById("conn-text").textContent =
+                "Raw Consumer 대기 중";
+              document.getElementById("conn-dot").classList.remove("live");
+              if (!unityCleared) {
+                clearUnity();
+                unityCleared = true;
+              }
+            }
+            return;
+          }
+          const payload = await res.json();
+          lastPayload = payload;
+          const data = pickEquipmentData(payload);
+
+          // event_id가 바뀐 경우에만 "새 데이터"로 취급 (수신 횟수, 차트 점 추가)
+          const eventKey = `${payload.run_id || ""}:${payload.event_id}`;
+          const isNewEvent = eventKey !== lastEventId;
+          if (isNewEvent) {
+            lastEventId = eventKey;
+            lastChangeAt = Date.now();
+            receivedCount += 1;
+            document.getElementById("poll-count").textContent = receivedCount;
+            if (Array.isArray(payload.equipment_states)) {
+              payload.equipment_states.forEach((state) => {
+                if (EQUIPMENT_IDS.includes(state.equipment_id))
+                  updateChart(state, state.equipment_id);
+              });
+            } else updateChart(data);
+
+            // Unity에는 원본 응답을 그대로 전달 (설비 3대를 Unity가 각각 처리하도록)
+            sendToUnity(payload);
+            unityCleared = false;
+          }
+          // 메시지가 멈춘 설비의 stale 상태도 Unity에 전달한다.
+          if (!isNewEvent && Array.isArray(payload.equipment_states))
+            sendToUnity(payload);
+
+          renderTelemetry(data.sensors);
+          renderDiagnosis(data.prediction);
+          updateHeader(data);
+        } catch (err) {
+          document.getElementById("conn-text").textContent = "API 연결 실패";
+          document.getElementById("conn-dot").classList.remove("live");
+          if (!unityCleared) {
+            clearUnity();
+            unityCleared = true;
+          }
+          console.error("poll error:", err);
+        } finally {
+          // 연결 실패 시 마지막 경고를 현재 판단처럼 남기지 않는다.
+          const state = currentHistory().bandState;
+          if (lastPayload && (!state || Date.now() - state.stamp >= STALE_MS))
+            renderTelemetry(pickEquipmentData(lastPayload).sensors);
+          redrawChart();
+        }
+      }
+
+      // ==================== Unity WebGL 로더 ====================
+      // web/Build의 loader/data/framework/wasm 파일을 불러와 unity-canvas에 Unity 인스턴스를 생성한다.
+      function loadUnity() {
+        const statusEl = document.getElementById("unity-status");
+        const canvas = document.getElementById("unity-canvas");
+        const buildFolder = UNITY_BUILD_FOLDER;
+        // 새 빌드와 이전 브라우저 캐시의 파일이 섞이지 않도록 같은 버전을 붙인다.
+        const buildVersion = "20260903-ai-labels-2";
+        const loaderUrl = `${buildFolder}/pro-build.loader.js?v=${buildVersion}`;
+
+        const config = {
+          dataUrl: `${buildFolder}/pro-build.data.gz?v=${buildVersion}`,
+          frameworkUrl: `${buildFolder}/pro-build.framework.js.gz?v=${buildVersion}`,
+          codeUrl: `${buildFolder}/pro-build.wasm.gz?v=${buildVersion}`,
+          streamingAssetsUrl: "StreamingAssets",
+          companyName: "HydroTwin Team",
+          productName: "HydroTwin",
+          productVersion: "0.1",
+          cacheControl: () => "no-store",
+        };
+
+        const script = document.createElement("script");
+        script.src = loaderUrl;
+        script.onload = () => {
+          if (typeof createUnityInstance !== "function") {
+            statusEl.textContent =
+              "Unity 로더 스크립트는 불러왔지만 createUnityInstance를 찾을 수 없음";
+            statusEl.classList.add("error");
+            return;
+          }
+          createUnityInstance(canvas, config, (progress) => {
+            statusEl.textContent = `Unity 로딩 중... ${Math.round(progress * 100)}%`;
+          })
+            .then((instance) => {
+              unityInstance = instance;
+              statusEl.classList.add("hidden");
+            })
+            .catch((err) => {
+              statusEl.textContent = "Unity 인스턴스 생성 실패";
+              statusEl.classList.add("error");
+              console.error("createUnityInstance 실패:", err);
+            });
+        };
+        script.onerror = () => {
+          statusEl.textContent = `Unity 빌드 파일을 못 찾음 (${loaderUrl}). web/${UNITY_BUILD_FOLDER}/ 폴더에 빌드 파일이 있는지 확인하세요.`;
+          statusEl.classList.add("error");
+        };
+        document.body.appendChild(script);
+      }
+
+      // ==================== 페이지 최초 실행 ====================
+      // 1) 차트 생성 → 2) 센서 기준범위 로드 → 3) Unity 로드 → 4) 즉시 API 조회 → 5) 이후 1초 폴링
+      initChart();
+      loadReferenceBands();
+      setInterval(() => {
+        if (!referenceBands) loadReferenceBands();
+      }, 30000);
+      document.getElementById("unit-label").textContent =
+        selectedEquipmentId.toUpperCase();
+      loadUnity();
+      poll();
+      setInterval(poll, POLL_INTERVAL_MS);
+    </script>
+  </body>
 </html>
