@@ -6,7 +6,8 @@ lightgbm==4.6.0
 pyarrow==19.0.1
 shap==0.48.0
 joblib==1.5.2
-tensorflow-cpu==2.20.0
+jax
+jaxlib
 keras==3.15.1
 kafka-python==2.2.15
 fastapi==0.116.1

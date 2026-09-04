@@ -5,7 +5,9 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+import keras
+import os
+os.environ["KERAS_BACKEND"] = "jax"
 
 from v5_generation_utils import SENSOR_COUNT, WINDOW_SIZE, generate_from_seed_batch
 
@@ -39,7 +41,7 @@ def main():
     if not np.isfinite(data).all():
         raise ValueError("Raw dataset contains NaN or Inf")
 
-    model = tf.keras.models.load_model(MODEL_FILE, compile=False)
+    model = keras.models.load_model(MODEL_FILE, compile=False)
     input_scaler = joblib.load(INPUT_SCALER_FILE)
     offset_scaler = joblib.load(OFFSET_SCALER_FILE)
     with np.load(BOUNDS_FILE, allow_pickle=False) as bounds_file:
