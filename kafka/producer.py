@@ -12,12 +12,12 @@ import time
 import uuid
 from pathlib import Path
 
+os.environ.setdefault("KERAS_BACKEND", "jax")
+
 import joblib
 import numpy as np
 import keras
 from kafka import KafkaProducer
-
-os.environ["KERAS_BACKEND"] = "jax"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:

@@ -58,7 +58,7 @@ services:
     <<: *app
     container_name: hydrotwin-producer
     command: [python, kafka/producer.py]
-    env_file: .env
+    env_file: ${PROJECT_ENV_FILE:-.env}
     environment: {KAFKA_BROKER: "kafka:29092", KAFKA_TOPIC: "hydraulic.sensor.multi.raw"}
     volumes:
       - type: bind
@@ -96,7 +96,7 @@ services:
     <<: *app
     container_name: hydrotwin-monitor
     command: [python, -m, src.runtime.monitor]
-    env_file: .env
+    env_file: ${PROJECT_ENV_FILE:-.env}
     environment:
       KAFKA_BROKER: "kafka:29092"
       KAFKA_TOPIC: "hydraulic.sensor.multi.raw"
@@ -161,6 +161,7 @@ services:
       DATA_HOST_DIR: ${DATA_HOST_DIR:-C:/ai-first-project/data}
       MODEL_HOST_DIR: ${MODEL_HOST_DIR:-C:/ai-first-project/models}
       STATE_HOST_DIR: ${STATE_HOST_DIR:-C:/ai-first-project/artifacts/runtime}
+      PROJECT_ENV_FILE: /project/.env
     ports: ["${JENKINS_BIND_ADDRESS:-127.0.0.1}:8080:8080"]
     volumes:
       - jenkins-data:/var/jenkins_home
