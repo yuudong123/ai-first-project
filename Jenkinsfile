@@ -3,7 +3,7 @@ pipeline {
     stages {
         stage('Git Clone') {
             steps {
-                git branch: 'dev'
+                git branch: 'dev',
                 url: 'https://github.com/yuudong123/ai-first-project.git'
             }
         }
