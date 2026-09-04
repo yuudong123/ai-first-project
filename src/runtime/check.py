@@ -1,11 +1,16 @@
 """Jenkins 및 수동 실행용 실시간 연결 점검."""
 import time
 import json
+import os
 from urllib.request import urlopen
 
+STATE_URL = os.getenv(
+    'HYDROTWIN_STATE_URL',
+    'http://localhost:8000/api/v1/state/latest',
+)
 
 def fetch():
-    with urlopen('http://localhost:8000/api/v1/state/latest',timeout=5) as response:
+    with urlopen(STATE_URL,timeout=5) as response:
         return json.load(response)
 
 

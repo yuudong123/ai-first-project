@@ -1,15 +1,16 @@
 pipeline {
     agent any
     environment {
-        DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
         IMAGE_NAME = 'yyaya/hydrotwin-app'
     }
     options { disableConcurrentBuilds(); timeout(time: 20, unit: 'MINUTES'); buildDiscarder(logRotator(numToKeepStr: '30')) }
     triggers {
         githubPush()
     }
-    parameters { choice(name: 'TASK', choices: ['verify', 'retrain'], description: '검증 또는 감지된 계절 드리프트 재학습') }
-    triggers { githubPush() }
+    parameters {
+        choice(name: 'TASK', choices: ['verify', 'retrain'], description: '검증 또는 감지된 계절 드리프트 재학습')
+        booleanParam(name: 'PUSH_IMAGE', defaultValue: false, description: '검증된 이미지를 Docker Hub에 푸시')
+    }
     stages {
         stage('dev 소스 받기') {
             when { expression { params.TASK == 'verify' } }
@@ -21,6 +22,7 @@ pipeline {
                 sh '''
                     set -eu
                     candidate="hydrotwin-app:candidate-${BUILD_NUMBER}"
+                    docker compose config --quiet
                     docker build --target app -t "$candidate" .
                     docker run --rm \
                       --mount "type=bind,source=${PROJECT_HOST_DIR}/data,target=/app/data,readonly" \
@@ -36,6 +38,7 @@ pipeline {
                 sh '''
                     set -eu
                     cd /project
+                    git config --global --add safe.directory /project
                     test "$(git branch --show-current)" = "${GIT_DEPLOY_BRANCH}"
                     test -z "$(git status --porcelain --untracked-files=all)"
 
@@ -46,13 +49,15 @@ pipeline {
 
                     rollback() {
                       echo '배포 실패: 이전 코드와 이미지로 복구합니다.'
-                      git reset --hard "$previous_revision"
+                      git switch --detach "$previous_revision"
+                      git branch -f "$GIT_DEPLOY_BRANCH" "$previous_revision"
+                      git switch "$GIT_DEPLOY_BRANCH"
                       docker tag "$rollback_image" hydrotwin-app:local
                       docker compose up -d --no-deps --force-recreate producer inference monitor api
+                      docker exec hydrotwin-monitor python -m src.runtime.check
                     }
                     trap rollback ERR
 
-                    git config --global --add safe.directory /project
                     git fetch --no-tags "$WORKSPACE" "$GIT_COMMIT"
                     git merge --ff-only "$GIT_COMMIT"
                     docker tag "$candidate" hydrotwin-app:local
@@ -76,25 +81,26 @@ pipeline {
         stage('실시간 서비스 확인') {
             steps { sh 'docker exec hydrotwin-monitor python -m src.runtime.check' }
         }
-        stage('도커 이미지 빌드 및 푸시') {
+        stage('검증된 이미지 푸시') {
+            when {
+                allOf {
+                    expression { params.TASK == 'verify' }
+                    expression { params.PUSH_IMAGE }
+                }
+            }
             steps {
-                sh '''
-                    # 1. 젠킨스가 관리하는 도커 크레덴셜 비밀번호(_PSW)와 아이디(_USR)로 로그인
-                    echo "$DOCKER_CREDENTIALS_PSW" | docker login -u "$DOCKER_CREDENTIALS_USR" --password-stdin
-                    
-                    # 2. 현재 상태의 컨테이너를 이미지로 커밋하거나 새로 빌드 (상황에 맞게 선택)
-                    # 예시 A: 작동 중인 컨테이너의 변경사항을 이미지로 저장할 때 (docker commit)
-                    docker commit hydrotwin-monitor $IMAGE_NAME:latest
-                    
-                    # 예시 B: 만약 Dockerfile로 새로 빌드한다면 아래 주석을 해제하세요
-                    # docker build -t $IMAGE_NAME:latest .
-                    
-                    # 3. 도커 허브로 푸시
-                    docker push $IMAGE_NAME:latest
-                    
-                    # 4. 보안을 위해 로그아웃
-                    docker logout
-                '''
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+                    sh '''
+                        set -eu
+                        revision="$(git rev-parse --short=12 HEAD)"
+                        echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
+                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
+                        docker tag hydrotwin-app:local "$IMAGE_NAME:$revision"
+                        docker tag hydrotwin-app:local "$IMAGE_NAME:latest"
+                        docker push "$IMAGE_NAME:$revision"
+                        docker push "$IMAGE_NAME:latest"
+                    '''
+                }
             }
         }
     }
