@@ -438,10 +438,74 @@
       /* 메인: Unity + 우측 관제 */
       .inspection-grid {
         display: grid;
-        grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
-        gap: 14px;
+        grid-template-columns: minmax(0, 1fr) 6px var(--side-width, 400px);
+        gap: 8px;
         align-items: start;
       }
+
+      /* Unity ↔ 우측 센서 패널 너비 조절 손잡이
+   - 기존 브랜치의 리사이즈 기능만 현재 디자인에 맞게 이식
+   - API / Chart / Unity 연결 로직과는 무관한 UI 기능 */
+      .col-resizer {
+        align-self: stretch;
+        min-height: 100%;
+        background: var(--bg-panel);
+        border-left: 1px solid var(--border-soft);
+        border-right: 1px solid var(--border-soft);
+        cursor: col-resize;
+        position: relative;
+        border-radius: 3px;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+      }
+      .col-resizer:hover,
+      .col-resizer.dragging {
+        background: var(--accent-dim);
+        border-color: rgba(47, 224, 196, 0.35);
+      }
+      /* 6px 손잡이를 실제로 잡기 쉽게 보이지 않는 클릭 영역을 넓힌다. */
+      .col-resizer::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -6px;
+        right: -6px;
+      }
+      /* 가운데 점선 그립 */
+      .col-resizer::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 2px;
+        height: 34px;
+        transform: translate(-50%, -50%);
+        border-radius: 1px;
+        background: repeating-linear-gradient(
+          to bottom,
+          var(--text-secondary) 0 2px,
+          transparent 2px 5px
+        );
+        pointer-events: none;
+      }
+      .col-resizer:hover::after,
+      .col-resizer.dragging::after {
+        background: repeating-linear-gradient(
+          to bottom,
+          var(--accent) 0 2px,
+          transparent 2px 5px
+        );
+      }
+      body.resizing {
+        user-select: none;
+      }
+      body.resizing-col,
+      body.resizing-col * {
+        cursor: col-resize !important;
+      }
+
       .unity-card {
         min-width: 0;
       }
@@ -1120,6 +1184,9 @@
         .inspection-grid {
           grid-template-columns: 1fr;
         }
+        .col-resizer {
+          display: none;
+        }
         .header-right {
           gap: 8px;
         }
@@ -1306,6 +1373,16 @@
             <div class="unity-engine">ENGINE: UNITY WEBGL · LIVE API STATE</div>
           </div>
         </div>
+
+        <!-- 우측 센서 패널 너비 조절: 좌우 드래그, 더블클릭 시 기본 폭 복귀 -->
+        <div
+          class="col-resizer"
+          id="col-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="실시간 센서 패널 너비 조절"
+          title="좌우로 드래그하여 센서 패널 너비 조절 · 더블클릭: 기본 너비"
+        ></div>
 
         <!-- 실시간 센서 표. renderTelemetry()가 API 센서값을 동적으로 행으로 생성한다. -->
         <aside class="card sensor-card">
@@ -2689,9 +2766,77 @@
         document.body.appendChild(script);
       }
 
+      // ==================== 우측 센서 패널 너비 조절 ====================
+      // 기존 브랜치에서 사이드바 리사이즈 기능만 가져온 UI 전용 코드.
+      // FastAPI / poll() / Chart.js / Unity SendMessage 연결에는 영향을 주지 않는다.
+      const SIDE_DEFAULT = 400;
+      const SIDE_MIN = 340;
+      const SIDE_MAX = 650;
+
+      function clampSideWidth(value) {
+        return Math.min(SIDE_MAX, Math.max(SIDE_MIN, value));
+      }
+
+      function setSideWidth(px) {
+        const width = clampSideWidth(px);
+        document.documentElement.style.setProperty(
+          "--side-width",
+          `${width}px`,
+        );
+        return width;
+      }
+
+      function initResizers() {
+        const handle = document.getElementById("col-resizer");
+        const sidePanel = document.querySelector(".sensor-card");
+        if (!handle || !sidePanel) return;
+
+        let startX = 0;
+        let startSize = 0;
+        let dragging = false;
+
+        const onMove = (event) => {
+          if (!dragging) return;
+          const point = event.touches ? event.touches[0] : event;
+          // 손잡이를 왼쪽으로 끌수록 우측 센서 패널이 넓어진다.
+          setSideWidth(startSize + (startX - point.clientX));
+          if (event.cancelable) event.preventDefault();
+        };
+
+        const onUp = () => {
+          if (!dragging) return;
+          dragging = false;
+          handle.classList.remove("dragging");
+          document.body.classList.remove("resizing", "resizing-col");
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          window.removeEventListener("touchmove", onMove);
+          window.removeEventListener("touchend", onUp);
+        };
+
+        const onDown = (event) => {
+          const point = event.touches ? event.touches[0] : event;
+          dragging = true;
+          startX = point.clientX;
+          startSize = sidePanel.getBoundingClientRect().width;
+          handle.classList.add("dragging");
+          document.body.classList.add("resizing", "resizing-col");
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+          window.addEventListener("touchmove", onMove, { passive: false });
+          window.addEventListener("touchend", onUp);
+          if (event.cancelable) event.preventDefault();
+        };
+
+        handle.addEventListener("mousedown", onDown);
+        handle.addEventListener("touchstart", onDown, { passive: false });
+        handle.addEventListener("dblclick", () => setSideWidth(SIDE_DEFAULT));
+      }
+
       // ==================== 페이지 최초 실행 ====================
-      // 1) 차트 생성 → 2) 센서 기준범위 로드 → 3) Unity 로드 → 4) 즉시 API 조회 → 5) 이후 1초 폴링
+      // 1) 차트 생성 → 2) 사이드바 리사이저 → 3) 센서 기준범위 로드 → 4) Unity 로드 → 5) 즉시 API 조회 → 6) 이후 1초 폴링
       initChart();
+      initResizers();
       loadReferenceBands();
       setInterval(() => {
         if (!referenceBands) loadReferenceBands();
