@@ -5,7 +5,7 @@ from urllib.request import urlopen
 
 
 def fetch():
-    with urlopen('http://api:8000/api/v1/state/latest',timeout=5) as response:
+    with urlopen('http://localhost:8000/api/v1/state/latest',timeout=5) as response:
         return json.load(response)
 
 
