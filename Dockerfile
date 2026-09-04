@@ -3,8 +3,9 @@ FROM docker:cli AS dockercli
 FROM jenkins/jenkins:lts-jdk21 AS jenkins
 USER root
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 USER jenkins
-RUN jenkins-plugin-cli --plugins workflow-aggregator
+RUN jenkins-plugin-cli --plugins workflow-aggregator git github credentials-binding
 COPY jenkins-init.groovy /usr/share/jenkins/ref/init.groovy.d/hydrotwin.groovy
 
 # 기본 빌드 대상은 Python 애플리케이션이다.

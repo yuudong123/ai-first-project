@@ -8,7 +8,7 @@ x-app: &app
     target: app
   working_dir: /app
   volumes:
-    - .:/app
+    - ${PROJECT_HOST_DIR:-.}:/app
   restart: unless-stopped
   logging:
     driver: json-file
@@ -129,11 +129,19 @@ services:
     env_file: .env
     environment:
       JAVA_OPTS: -Djenkins.install.runSetupWizard=false -Xms256m -Xmx768m
-    ports: ["127.0.0.1:8080:8080"]
+      GIT_REPOSITORY_URL: ${GIT_REPOSITORY_URL:-https://github.com/yuudong123/ai-first-project.git}
+      GIT_DEPLOY_BRANCH: ${GIT_DEPLOY_BRANCH:-dev}
+      GIT_CREDENTIAL_ID: ${GIT_CREDENTIAL_ID:-hydrotwin-github}
+      PROJECT_HOST_DIR: ${PROJECT_HOST_DIR:-C:/ai-first-project}
+      DATA_HOST_DIR: ${DATA_HOST_DIR:-C:/ai-first-project/data}
+      MODEL_HOST_DIR: ${MODEL_HOST_DIR:-C:/ai-first-project/models}
+      STATE_HOST_DIR: ${STATE_HOST_DIR:-C:/ai-first-project/artifacts/runtime}
+    ports: ["${JENKINS_BIND_ADDRESS:-127.0.0.1}:8080:8080"]
     volumes:
       - jenkins-data:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/project:ro
+      # 전용 개발 서버의 dev 작업 폴더다. Jenkins는 검증 성공 후에만 fast-forward한다.
+      - ${PROJECT_HOST_DIR:-.}:/project
     mem_limit: 1536m
 
 volumes:

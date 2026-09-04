@@ -84,6 +84,55 @@ KAFKA_ADVERTISED_HOST=localhost
 받아야 하는 개발 서버에서는 두 Kafka 값을 서버 내부망 IP로 바꾸고 Windows 방화벽의 TCP
 9092를 내부망에만 허용한다.
 
+## GitHub 웹훅 자동 배포
+
+자동 배포 대상은 `dev` 브랜치 하나다. GitHub push가 들어오면 Jenkins가 다음 순서로 처리한다.
+
+1. 비공개 GitHub 저장소에서 해당 `dev` 커밋과 `Jenkinsfile`을 받는다.
+2. `hydrotwin-app:candidate-빌드번호` 후보 이미지를 만든다.
+3. 후보 이미지에서 전체 Python 회귀 테스트를 실행한다.
+4. 테스트가 성공했을 때만 개발 서버의 `C:/ai-first-project`를 fast-forward한다.
+5. `producer`, `inference`, `monitor`, `api`를 새 이미지로 교체한다.
+6. 설비 3대 연결 검사가 실패하면 직전 코드와 이미지로 자동 복구한다.
+
+비공개 저장소를 읽을 수 있도록 GitHub fine-grained personal access token을 만들고 저장소
+`Contents: Read-only` 권한만 준다. 개발 서버의 `.env`에는 다음 값을 직접 추가한다. 실제
+토큰은 Git에 커밋하지 않는다.
+
+```dotenv
+GITHUB_USERNAME=GitHub_사용자명
+GITHUB_TOKEN=발급한_토큰
+GIT_REPOSITORY_URL=https://github.com/yuudong123/ai-first-project.git
+GIT_DEPLOY_BRANCH=dev
+GIT_CREDENTIAL_ID=hydrotwin-github
+PROJECT_HOST_DIR=C:/ai-first-project
+DATA_HOST_DIR=C:/ai-first-project/data
+MODEL_HOST_DIR=C:/ai-first-project/models
+STATE_HOST_DIR=C:/ai-first-project/artifacts/runtime
+```
+
+설정을 넣은 다음 Jenkins 이미지와 컨테이너를 한 번 갱신한다.
+
+```powershell
+docker compose build jenkins
+docker compose up -d --force-recreate jenkins
+```
+
+GitHub 저장소의 `Settings → Webhooks → Add webhook`에서 다음과 같이 등록한다.
+
+- Payload URL: `https://외부에서-접근-가능한-Jenkins주소/github-webhook/`
+- Content type: `application/json`
+- Event: `Just the push event`
+- Active: 체크
+
+GitHub 서버는 `localhost`나 `192.168.x.x`로 접속할 수 없다. Jenkins 자체 포트를 인터넷에
+직접 개방하지 말고, 인증과 HTTPS가 적용된 리버스 프록시 또는 터널을 통해 `/github-webhook/`
+경로만 도달하게 한다. Jenkins 화면의 `GitHub Hook Log`에서 응답을 확인하고 최초 1회는
+`hydrotwin-local` 작업을 수동 실행해 비공개 저장소 인증과 배포 경로를 검증한다.
+
+자동 배포 중 개발 서버 작업 폴더에 커밋하지 않은 파일이 있으면 Jenkins는 이를 덮어쓰지
+않고 배포를 실패 처리한다. 개발 서버 폴더는 배포 전용으로 유지한다.
+
 ## 검증
 
 ```powershell

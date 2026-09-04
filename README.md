@@ -52,6 +52,11 @@ docker compose ps
 docker exec hydrotwin-monitor python -m src.runtime.check
 ```
 
+`dev` 브랜치의 GitHub push는 Jenkins의 `/github-webhook/`으로 전달한다. Jenkins는 새 커밋을
+별도 작업공간에서 받아 후보 이미지를 만들고 테스트한 뒤, 성공한 경우에만 개발 서버의
+컨테이너 네 개를 교체한다. 설정 방법은 [Docker 실행 가이드](docs/local-runtime.md)의
+`GitHub 웹훅 자동 배포`를 참고한다.
+
 중지할 때는 볼륨을 보존합니다.
 
 ```powershell
