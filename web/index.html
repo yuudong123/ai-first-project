@@ -946,6 +946,59 @@
       }
 
       /* ==================== AI 주요 영향 센서 분석 ==================== */
+      .ai-sensor-analysis {
+        padding-top: 12px;
+        border-top: 1px solid rgba(47, 224, 196, 0.25);
+      }
+
+      .ai-sensor-analysis-head {
+        margin-bottom: 10px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .ai-sensor-analysis-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font: 600 11px var(--font-mono);
+        color: var(--text-primary);
+      }
+
+      .ai-sensor-analysis-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .analysis-collapse-button {
+        padding: 4px 8px;
+        color: var(--accent);
+        border-color: rgba(47, 224, 196, 0.35);
+      }
+
+      .analysis-collapse-button:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .ai-sensor-analysis-guide {
+        margin-top: 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-soft);
+        border-radius: 5px;
+        background: var(--bg-panel);
+        font-size: 9.5px;
+        line-height: 1.55;
+        color: var(--text-secondary);
+      }
+
+      .ai-sensor-analysis-guide strong {
+        color: var(--caution);
+      }
+
       .ai-sensor-analysis.hidden {
         display: none;
       }
@@ -1074,6 +1127,9 @@
         width: min(620px, 100%);
         max-height: min(760px, calc(100vh - 40px));
         overflow: auto;
+        transition:
+          width 0.2s ease,
+          max-height 0.2s ease;
         border: 1px solid rgba(251, 191, 36, 0.55);
         border-radius: 8px;
         background: var(--bg-panel);
@@ -1083,6 +1139,16 @@
         scrollbar-width: thin;
         scrollbar-color: var(--border) transparent;
       }
+      /* 센서 분석 펼침 상태 */
+      .modal-dialog.analysis-open {
+        width: min(1120px, calc(100vw - 40px));
+        max-height: calc(100vh - 40px);
+      }
+
+      .modal-dialog.analysis-open #modal-analysis-open-btn {
+        display: none;
+      }
+
       .modal-dialog::-webkit-scrollbar {
         width: 6px;
       }
@@ -1415,7 +1481,7 @@
   </head>
   <body>
     <!-- ==================== 상단 헤더 ====================
-     현재 선택 설비, API 수신 상태, 사이클/경과/수신 횟수를 표시한다. -->
+     현재 선택 설비, API 수신 상태, 데이터 순번/경과/수신 횟수를 표시한다. -->
     <header class="top-header">
       <div class="brand">
         <div class="brand-icon">H</div>
@@ -1435,7 +1501,7 @@
         <div class="header-divider"></div>
         <div class="live-meta">
           <div class="meta-item">
-            <span class="meta-label">사이클</span
+            <span class="meta-label">데이터 순번</span
             ><span class="meta-value">#<span id="cycle-id">—</span></span>
           </div>
           <div class="meta-item">
@@ -1613,72 +1679,6 @@
           </div>
         </div>
       </section>
-      <!-- ==================== AI 주요 영향 센서 분석 ==================== -->
-      <section class="card ai-sensor-analysis hidden" id="ai-sensor-analysis">
-        <div class="card-header">
-          <div class="card-title">
-            <span class="card-title-dot"></span>
-            AI 주요 영향 센서 분석
-          </div>
-          <span class="card-meta" id="ai-analysis-summary">
-            상위 영향 센서 대기
-          </span>
-        </div>
-
-        <div class="ai-sensor-analysis-body">
-          <div class="ai-sensor-analysis-note" id="ai-analysis-note">
-            AI 이상 판정에 영향을 준
-            <strong>상위 센서 3개</strong>의 최근 추이를 비교합니다.
-          </div>
-
-          <div class="ai-sensor-chart-grid">
-            <article class="ai-sensor-chart-card" id="ai-sensor-panel-1">
-              <div class="ai-sensor-chart-head">
-                <div class="ai-sensor-chart-title">
-                  <span class="ai-sensor-rank">1</span>
-                  <span id="ai-sensor-title-1">—</span>
-                </div>
-                <span class="ai-sensor-chart-meta" id="ai-sensor-meta-1"
-                  >—</span
-                >
-              </div>
-              <div class="ai-sensor-chart-wrap">
-                <canvas id="ai-sensor-chart-1"></canvas>
-              </div>
-            </article>
-
-            <article class="ai-sensor-chart-card" id="ai-sensor-panel-2">
-              <div class="ai-sensor-chart-head">
-                <div class="ai-sensor-chart-title">
-                  <span class="ai-sensor-rank">2</span>
-                  <span id="ai-sensor-title-2">—</span>
-                </div>
-                <span class="ai-sensor-chart-meta" id="ai-sensor-meta-2"
-                  >—</span
-                >
-              </div>
-              <div class="ai-sensor-chart-wrap">
-                <canvas id="ai-sensor-chart-2"></canvas>
-              </div>
-            </article>
-
-            <article class="ai-sensor-chart-card" id="ai-sensor-panel-3">
-              <div class="ai-sensor-chart-head">
-                <div class="ai-sensor-chart-title">
-                  <span class="ai-sensor-rank">3</span>
-                  <span id="ai-sensor-title-3">—</span>
-                </div>
-                <span class="ai-sensor-chart-meta" id="ai-sensor-meta-3"
-                  >—</span
-                >
-              </div>
-              <div class="ai-sensor-chart-wrap">
-                <canvas id="ai-sensor-chart-3"></canvas>
-              </div>
-            </article>
-          </div>
-        </div>
-      </section>
     </main>
 
     <!-- 화면 하단 기술 스택/서비스 정보 -->
@@ -1758,6 +1758,98 @@
             <div class="check-list" id="modal-checks"></div>
           </section>
 
+          <!-- ==================== AI 주요 영향 센서 분석 ==================== -->
+          <section class="ai-sensor-analysis hidden" id="ai-sensor-analysis">
+            <div class="ai-sensor-analysis-head">
+              <div>
+                <div class="ai-sensor-analysis-title">
+                  <span class="card-title-dot"></span>
+                  <span>AI 주요 영향 센서 실시간 분석</span>
+                </div>
+
+                <div class="ai-sensor-analysis-note" id="ai-analysis-note">
+                  AI 이상 판정에 영향을 준
+                  <strong>상위 센서 3개</strong>의 최근 추이를 비교합니다.
+                </div>
+              </div>
+
+              <div class="ai-sensor-analysis-actions">
+                <span class="card-meta" id="ai-analysis-summary">
+                  상위 영향 센서 대기
+                </span>
+
+                <button
+                  class="modal-button analysis-collapse-button"
+                  type="button"
+                  onclick="collapseSensorAnalysis()"
+                >
+                  센서 분석 접기 ▲
+                </button>
+              </div>
+            </div>
+
+            <div class="ai-sensor-analysis-body">
+              <div class="ai-sensor-chart-grid">
+                <article class="ai-sensor-chart-card" id="ai-sensor-panel-1">
+                  <div class="ai-sensor-chart-head">
+                    <div class="ai-sensor-chart-title">
+                      <span class="ai-sensor-rank">1</span>
+                      <span id="ai-sensor-title-1">—</span>
+                    </div>
+
+                    <span class="ai-sensor-chart-meta" id="ai-sensor-meta-1">
+                      —
+                    </span>
+                  </div>
+
+                  <div class="ai-sensor-chart-wrap">
+                    <canvas id="ai-sensor-chart-1"></canvas>
+                  </div>
+                </article>
+
+                <article class="ai-sensor-chart-card" id="ai-sensor-panel-2">
+                  <div class="ai-sensor-chart-head">
+                    <div class="ai-sensor-chart-title">
+                      <span class="ai-sensor-rank">2</span>
+                      <span id="ai-sensor-title-2">—</span>
+                    </div>
+
+                    <span class="ai-sensor-chart-meta" id="ai-sensor-meta-2">
+                      —
+                    </span>
+                  </div>
+
+                  <div class="ai-sensor-chart-wrap">
+                    <canvas id="ai-sensor-chart-2"></canvas>
+                  </div>
+                </article>
+
+                <article class="ai-sensor-chart-card" id="ai-sensor-panel-3">
+                  <div class="ai-sensor-chart-head">
+                    <div class="ai-sensor-chart-title">
+                      <span class="ai-sensor-rank">3</span>
+                      <span id="ai-sensor-title-3">—</span>
+                    </div>
+
+                    <span class="ai-sensor-chart-meta" id="ai-sensor-meta-3">
+                      —
+                    </span>
+                  </div>
+
+                  <div class="ai-sensor-chart-wrap">
+                    <canvas id="ai-sensor-chart-3"></canvas>
+                  </div>
+                </article>
+              </div>
+
+              <div class="ai-sensor-analysis-guide">
+                정상 운전 기준 범위와 실시간 센서 추이를 비교합니다.
+                <strong>음영 영역</strong>은 정상 운전 기준 범위이며,
+                <strong>주황색 표시</strong>는 기준 범위 이탈을 의미합니다.
+              </div>
+            </div>
+          </section>
+
           <p class="modal-note">
             ※ AI 결과는 점검 우선순위를 돕기 위한 참고 정보입니다. 실제 정비
             판단은 센서 원값과 설비 점검 결과를 함께 확인하세요.
@@ -1774,10 +1866,11 @@
           </button>
           <button
             class="modal-button primary"
+            id="modal-analysis-open-btn"
             type="button"
             onclick="focusPrimaryFactor()"
           >
-            상세 보기 (센서 분석) →
+            상세 보기 (센서 분석) ▼
           </button>
         </footer>
       </section>
@@ -2114,9 +2207,13 @@
       // X/닫기/ESC/바깥영역 클릭 시 모달을 닫는다.
       function closeAnomalyModal() {
         const modal = document.getElementById("anomaly-modal");
+
         modal.classList.remove("open");
         modal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
+
+        // 다시 열 때는 기본 요약 팝업부터 시작
+        hideAiSensorAnalysis();
       }
 
       // ==================== AI 주요 영향 센서 3개 분석 ====================
@@ -2159,17 +2256,26 @@
         aiSensorCharts = [];
       }
 
-      // AI 3개 센서 분석 영역을 숨긴다.
+      // AI 3개 센서 분석 영역을 숨기고 모달을 기본 크기로 되돌린다.
       function hideAiSensorAnalysis() {
         const section = document.getElementById("ai-sensor-analysis");
 
+        const dialog = document.querySelector("#anomaly-modal .modal-dialog");
+
         if (section) section.classList.add("hidden");
+
+        if (dialog) dialog.classList.remove("analysis-open");
 
         destroyAiSensorCharts();
 
         aiAnalysisSensors = [];
         aiAnalysisEquipmentId = null;
         aiAnalysisContext = null;
+      }
+
+      // 펼쳐진 센서 분석만 접고 이상 상세 모달은 그대로 유지한다.
+      function collapseSensorAnalysis() {
+        hideAiSensorAnalysis();
       }
 
       // 센서 1개에 대한 Chart.js 그래프 생성
@@ -2412,11 +2518,7 @@
 
         const sensors = getTopAnalysisSensors(component);
 
-        closeAnomalyModal();
-
-        if (!sensors.length) {
-          return;
-        }
+        if (!sensors.length) return;
 
         aiAnalysisEquipmentId = selectedEquipmentId;
 
@@ -2427,15 +2529,13 @@
           level: riskClass(component.risk_level),
         };
 
-        // 기존 단일 그래프도 1순위 센서로 맞춘다.
-        selectSensor(sensors[0].sensor);
+        // 모달을 넓은 분석 상태로 전환
+        const dialog = document.querySelector("#anomaly-modal .modal-dialog");
 
+        if (dialog) dialog.classList.add("analysis-open");
+
+        // 같은 모달 내부에서 그래프 3개 표시
         renderAiSensorAnalysis();
-
-        document.getElementById("ai-sensor-analysis")?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
       }
 
       window.addEventListener("keydown", (e) => {
