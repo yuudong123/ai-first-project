@@ -214,7 +214,15 @@ def validate_seed_records(
 class MixedSeedController:
     """설비별 기준 초기값을 유지하며 안정 2구간·불안정 1구간을 반복한다."""
 
-    def __init__(self, raw_data, profiles, runtimes, seed=None):
+    def __init__(
+        self,
+        raw_data,
+        profiles,
+        runtimes,
+        seed=None,
+        initial_seconds=120,
+        segment_seconds=60,
+    ):
         from src.runtime.seed_schedule import SeedSchedule
         self.raw_data = raw_data
         self.profiles = np.asarray(profiles)
@@ -225,6 +233,8 @@ class MixedSeedController:
             schedule = SeedSchedule(
                 profiles, reference_seed=runtimes[equipment_id].seed_record,
                 seed=None if seed is None else seed+index,
+                initial_seconds=initial_seconds,
+                segment_seconds=segment_seconds,
             )
             # 같은 불안정 초기값을 동시에 골라 설비 출력이 복제되는 것을 방지한다.
             schedule.unstable_pool = schedule.unstable_pool[index::len(EQUIPMENT_IDS)]
@@ -284,25 +294,6 @@ def create_multi_raw_message(
 
 def current_timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
-
-
-def clip_for_six_decimal_raw_range(
-    sensor_values: Sequence[float],
-    raw_sensor_min: Sequence[float],
-    raw_sensor_max: Sequence[float],
-) -> np.ndarray:
-    """Keep six-decimal Kafka values strictly inside the UCI Raw range."""
-    values = np.asarray(sensor_values, dtype=np.float64)
-    raw_min = np.asarray(raw_sensor_min, dtype=np.float64)
-    raw_max = np.asarray(raw_sensor_max, dtype=np.float64)
-    decimal_scale = 1_000_000.0
-    safe_min = np.ceil(raw_min * decimal_scale) / decimal_scale
-    safe_max = np.floor(raw_max * decimal_scale) / decimal_scale
-    safe_min = np.where(safe_min < raw_min, safe_min + 1e-6, safe_min)
-    safe_max = np.where(safe_max > raw_max, safe_max - 1e-6, safe_max)
-    if np.any(safe_min > safe_max):
-        raise ValueError("A sensor Raw range cannot be represented at six decimals")
-    return np.clip(np.round(values, 6), safe_min, safe_max)
 
 
 def validate_multi_raw_message(message: Mapping, sensor_names: Sequence[str]) -> None:

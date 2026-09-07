@@ -64,12 +64,14 @@ services:
       - type: bind
         source: ${DATA_HOST_DIR:-./data}
         target: /app/data
+        read_only: true
         bind: {create_host_path: false}
       - type: bind
         source: ${MODEL_HOST_DIR:-./models}
         target: /app/models
         read_only: true
         bind: {create_host_path: false}
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime
     mem_limit: 2g
     depends_on:
       kafka: {condition: service_healthy}

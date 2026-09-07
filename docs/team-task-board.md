@@ -23,11 +23,11 @@ UCI 원본 TXT
 → 모델·라벨 매핑·SHAP 결과 저장
 
 [실시간 시연]
-학습에 쓰지 않은 Test 사이클
-→ Kafka Producer가 1초 단위로 재생
-→ hydraulic.telemetry.v1
-→ 10초 버퍼·AI 추론
-→ hydraulic.prediction.v1
+V5 생성 모델 + 안정·불안정 운전 시나리오
+→ Kafka Producer가 설비 3대 값을 1초 단위로 생성
+→ hydraulic.sensor.multi.raw
+→ 설비별 10초 버퍼·AI 추론
+→ latest.json 최신 상태 저장
 → FastAPI 최신 상태 API
 → 웹 대시보드 + Unity WebGL
 
@@ -167,45 +167,40 @@ Kafka 브로커와 Docker 환경은 신종건이 담당하고, 박민은 해당 
 
 ### 입력받는 결과물
 
-- 홍유나: `replay_test.parquet`, `predict()`와 모델 메타데이터
+- 홍유나: 1Hz 17센서 데이터, V5 생성 모델, 10초 분류 모델과 메타데이터
 - 조현재: 아래 API 응답 계약과 Unity WebGL 빌드 경로
 - 신종건: Kafka 접속 주소, Topic과 Docker Compose 실행 방법
 
 ### 구현 작업
 
-1. mock JSON을 전송·출력하는 최소 Kafka Producer·Consumer를 만든다.
-2. Producer가 Test 사이클을 1초 간격으로 재생하도록 바꾼다.
-3. 메시지의 `equipment_id`는 `station-01`~`station-03`으로 고정하고 설비별 순서를 유지한다.
+1. V5 모델로 서로 다른 설비 3대의 센서값을 1초마다 생성한다.
+2. 안정·불안정 초기값을 섞고 전환 구간은 10초 동안 부드럽게 연결한다.
+3. `equipment_id`를 Kafka key로 사용해 설비별 메시지 순서를 유지한다.
 4. `hydraulic.sensor.multi.raw` Consumer가 설비마다 독립적인 최근 10초 데이터를 유지하게 한다.
-5. 10초가 쌓이면 홍유나의 `predict()`를 호출하고 이후 1초마다 다시 예측한다.
-6. 결과를 `hydraulic.prediction.v1` Topic으로 전송한다.
+5. 10초가 쌓이면 분류 모델을 호출하고 이후 1초마다 다시 예측한다.
+6. 추론 결과를 `artifacts/runtime/latest.json`에 원자적으로 저장한다.
 7. FastAPI가 최신 예측을 읽어 `/health`와 `/api/v1/state/latest`로 제공하게 한다.
 8. Chart.js로 센서 차트, 부품 상태 카드와 마지막 갱신 시각을 표시한다.
 9. 조현재의 Unity WebGL 빌드를 웹 페이지에 삽입한다.
-10. Kafka·모델이 준비되기 전에도 mock 모드로 웹과 API를 실행할 수 있게 한다.
 
 ### 결과물
 
 ```text
-src/streaming/replay_producer.py
-src/streaming/inference_consumer.py
-src/streaming/schemas.py
-src/api/app.py
-src/api/state_store.py
+kafka/producer.py
+kafka/consumer.py
+api/main.py
 web/index.html
-web/app.js
-web/styles.css
-docs/api/api-contract.md
+docs/local-runtime.md
 ```
 
 ### 완료 기준
 
-- 사이클 하나가 60개의 1초 이벤트로 순서대로 전송된다.
+- 설비 3대가 각각 1초마다 한 번씩 서로 다른 값을 전송한다.
 - 첫 예측은 10초 이후 생성되고 이후 1초마다 갱신된다.
 - `/health`가 HTTP 200을 반환한다.
 - `/api/v1/state/latest`가 아래 JSON 계약을 지킨다.
 - API 미응답과 데이터 대기 상태가 웹에 구분되어 표시된다.
-- 웹 차트와 Unity가 동일한 `cycle_id`와 상태를 보여준다.
+- 웹 차트와 Unity가 동일한 설비별 `event_id`와 상태를 보여준다.
 
 ### 발표 범위
 
@@ -224,11 +219,11 @@ docs/api/api-contract.md
 ### 구현 작업
 
 1. 단일 Kafka 브로커를 KRaft 방식으로 실행하는 Compose 설정을 만든다.
-2. `hydraulic.telemetry.v1`, `hydraulic.prediction.v1` Topic 준비 방법을 문서화한다.
+2. `hydraulic.sensor.multi.raw` Topic 준비 방법을 문서화한다.
 3. FastAPI용 Dockerfile과 전체 `docker-compose.yml`을 만든다.
 4. 데이터 전처리 함수와 FastAPI 응답 스키마의 pytest를 작성한다.
 5. Jenkinsfile에 Checkout → Test → Docker Build → Deploy → Health Check 단계를 작성한다.
-6. Jenkins가 저장소의 실제 `master` 브랜치를 사용하도록 설정한다.
+6. Jenkins가 배포 대상인 `dev` 브랜치를 사용하도록 설정한다.
 7. MLflow에 파라미터, Macro F1, 모델 파일과 학습 시각을 기록한다.
 8. 드리프트 감지 결과의 온도·압력 offset을 기존 라벨 데이터에 적용하는 계절 데이터 증강 단계를 연결한다.
 9. 원본+계절 증강 데이터로 상태 예측 후보 모델을 재학습하고, 원본·계절 Test에서 모두 기준을 통과할 때만 승격한다.
@@ -266,8 +261,7 @@ docs/operations/runbook.md
 
 | Topic | 생산자 | 소비자 | 용도 |
 |---|---|---|---|
-| `hydraulic.telemetry.v1` | Test 데이터 재생 Producer | 추론 Consumer | 1초 단위 센서 이벤트 |
-| `hydraulic.prediction.v1` | 추론 Consumer | FastAPI 상태 저장기 | 부품별 예측과 영향 센서 |
+| `hydraulic.sensor.multi.raw` | V5 설비 3대 Producer | 추론 Consumer, 드리프트 Monitor | 설비별 1초 센서값 |
 
 교육용 설비 3대 시연은 하나의 멀티 설비 Topic에서 시작하고 `equipment_id`로 상태와 추론 버퍼를 분리한다.
 
@@ -275,22 +269,24 @@ docs/operations/runbook.md
 
 ```json
 {
-  "schema_version": 1,
-  "event_id": "cycle-1731-sec-12",
-  "machine_id": "hydraulic-rig-01",
-  "cycle_id": 1731,
-  "elapsed_sec": 12,
-  "occurred_at": "2026-08-28T14:10:12+09:00",
+  "equipment_id": "station-01",
+  "timestamp": "2026-09-07T14:10:12.000+09:00",
   "sensors": {
-    "PS1": {"mean": 151.2, "std": 2.1, "min": 147.4, "max": 155.7},
-    "FS1": {"mean": 7.8, "std": 0.2, "min": 7.4, "max": 8.1},
-    "TS1": {"value": 38.2},
-    "VS1": {"value": 0.61}
-  }
+    "PS1": 151.2,
+    "FS1": 7.8,
+    "TS1": 38.2,
+    "VS1": 0.61
+  },
+  "run_id": "생성기 실행 ID",
+  "event_id": 13,
+  "segment_id": 0,
+  "reference_context": true
 }
 ```
 
-실제 메시지에는 필요한 센서가 모두 들어가지만 정답 라벨은 포함하지 않는다.
+실제 `sensors`에는 17개 값이 모두 들어간다. 정답 라벨, AI 예측, 주입한 offset은 Raw
+메시지에 포함하지 않는다. `run_id`, `event_id`, `segment_id`, `reference_context`는 재시작,
+누락, 운전 전환과 드리프트 기준 구간을 구분하기 위한 내부 제어값이다.
 
 ### 최신 상태 API 예시
 
@@ -298,40 +294,19 @@ Endpoint: `GET /api/v1/state/latest`
 
 ```json
 {
-  "machine_id": "hydraulic-rig-01",
-  "cycle_id": 1731,
-  "elapsed_sec": 20,
-  "observed_window_sec": 20,
-  "updated_at": "2026-08-28T14:10:20+09:00",
-  "components": {
-    "pump": {
-      "state_code": 2,
-      "state_label": "severe_leakage",
-      "risk_level": "danger",
-      "confidence": 0.91
-    },
-    "valve": {
-      "state_code": 100,
-      "state_label": "normal",
-      "risk_level": "normal",
-      "confidence": 0.96
-    },
-    "cooler": {
-      "state_code": 20,
-      "state_label": "reduced_efficiency",
-      "risk_level": "warning",
-      "confidence": 0.88
-    },
-    "accumulator": {
-      "state_code": 115,
-      "state_label": "slightly_reduced",
-      "risk_level": "caution",
-      "confidence": 0.82
+  "source": "multi",
+  "event_id": 39,
+  "equipment_states": [
+    {
+      "equipment_id": "station-01",
+      "event_id": 13,
+      "sensors": {"PS1": 151.2, "TS1": 38.2},
+      "prediction": {
+        "status": "ready",
+        "observed_window_sec": 10,
+        "components": {}
+      }
     }
-  },
-  "top_factors": [
-    {"feature": "PS1_mean", "impact": 0.31},
-    {"feature": "FS1_std", "impact": 0.19}
   ]
 }
 ```
@@ -347,8 +322,8 @@ Endpoint: `GET /api/v1/state/latest`
 
 공통 규칙:
 
-1. `master`에 직접 작업하지 않는다.
-2. 작업 시작 전에 최신 `master`를 반영한다.
+1. 개인 작업 브랜치에서 검증한 뒤 배포 대상인 `dev`에 반영한다.
+2. 작업 시작 전에 최신 `dev`를 반영한다.
 3. 한 커밋에는 한 목적만 담는다.
 4. PR에는 실행 명령, 결과 화면과 남은 문제를 기록한다.
 5. 담당자는 자기 영역의 최소 테스트와 발표용 캡처를 함께 만든다.
@@ -356,15 +331,14 @@ Endpoint: `GET /api/v1/state/latest`
 ## 10. 통합 순서
 
 ```text
-1. 조현재·박민: API JSON 계약 확정
-2. 각자 mock 데이터로 Unity·API·Kafka·모델 독립 실행
-3. 홍유나 특징 데이터 → 실제 모델 연결
-4. 홍유나 Test 재생 파일 → 박민 Producer 연결
-5. 박민 Kafka 추론 → FastAPI 연결
-6. FastAPI → 조현재 Unity 연결
-7. 박민 웹에 Unity WebGL 삽입
-8. 신종건 Docker Compose·Jenkins·MLflow 연결
-9. 전체 시연 고정 후 기능 변경 중단
+1. V5 생성 모델 → 설비 3대 Kafka Producer 연결
+2. Kafka Raw Topic → 설비별 10초 추론 Consumer 연결
+3. 최신 상태 파일 → FastAPI 연결
+4. FastAPI → 웹 UI와 Unity WebGL 연결
+5. 드리프트 Monitor → Jenkins 재학습 작업 연결
+6. Docker Compose 전체 실행과 3설비 상태 확인
+7. `dev` 자동 배포와 Health Check 확인
+8. 전체 시연 고정 후 기능 변경 중단
 ```
 
 ## 11. MVP에서 제외할 기술

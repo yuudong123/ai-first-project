@@ -14,7 +14,6 @@ from v5_multi_station_utils import (  # noqa: E402
     V5StationRuntime,
     MixedSeedController,
     assert_station_values_differ,
-    clip_for_six_decimal_raw_range,
     create_multi_raw_message,
     validate_multi_raw_message,
 )
@@ -86,17 +85,6 @@ def test_station_difference_check_rejects_identical_values():
     values["station-03"] = values["station-01"].copy()
     with pytest.raises(ValueError):
         assert_station_values_differ(values)
-
-
-def test_six_decimal_values_stay_strictly_inside_raw_bounds():
-    raw_min = np.asarray([134.84780883789062] * 17)
-    raw_max = np.asarray([191.6153106689453] * 17)
-    values = clip_for_six_decimal_raw_range(
-        np.asarray([200.0] * 17), raw_min, raw_max
-    )
-    assert (values >= raw_min).all()
-    assert (values <= raw_max).all()
-    assert values[0] == 191.615310
 
 
 def mixed_controller(seed=42):

@@ -35,6 +35,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 - Topic: `hydraulic.sensor.multi.raw`
 - 설비 ID: `station-01`, `station-02`, `station-03`
 - 메시지: `equipment_id`, `timestamp`, 센서 17개, `run_id`, `event_id`, `segment_id`, `reference_context`
+- Kafka key: 설비 ID. 토픽 파티션이 늘어나도 같은 설비의 메시지 순서를 유지한다.
 - API: `GET /api/v1/state/latest`
 - 상태 파일: `artifacts/runtime/latest.json`
 
@@ -51,6 +52,9 @@ API는 `equipment_states`에 세 설비가 모두 있어야 정상 응답한다.
 - 다음 드리프트: 이전 시작 후 무작위 60~1,200초
 - 이동 시간: 기본 30초
 - 안정·불안정 초기값 전환: 10초 `smoothstep` 보간으로 센서값을 연결
+
+계절 offset을 적용한 센서값은 학습 데이터의 최솟값·최댓값으로 다시 자르지 않는다. 학습
+데이터 범위 밖의 변화도 드리프트 감지와 경고 단계에서 관측할 수 있어야 하기 때문이다.
 
 초기 사이클 라벨과 주입 offset은 진단 기록일 뿐 생성값의 정답으로 사용하지 않는다.
 부품·안정 상태는 각 설비의 실제 생성값을 10초 모델에 넣은 결과만 화면에 표시한다.
