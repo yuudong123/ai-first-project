@@ -11,7 +11,7 @@ def three_equipment_payload(run_id='current-run'):
     from src.runtime.common import now
     states=[]
     for index,equipment in enumerate(('station-01','station-02','station-03')):
-        states.append({'equipment_id':equipment,'event_id':1,'cycle_id':1,'elapsed_sec':10,
+        states.append({'equipment_id':equipment,'event_id':1,'elapsed_sec':10,
             'run_id':run_id,'updated_at':now(),'generated_at':now(),'received_at':now(),
             'sensors':dict.fromkeys(p.SENSOR_NAMES,float(index+1)),'model_version':'v-test',
             'prediction':{'status':'ready','observed_window_sec':10,'stable_flag':0,'components':{}}})
@@ -95,8 +95,14 @@ def test_api_preserves_monitoring_and_unity_fields(tmp_path,monkeypatch):
     monkeypatch.setattr(main,'LATEST_RAW_PATH',path)
     client = TestClient(main.app)
     assert client.get('/api/v1/state/latest').status_code==503
-    path.write_text(json.dumps(three_equipment_payload()))
+    legacy = three_equipment_payload()
+    legacy['cycle_id'] = 99
+    for state in legacy['equipment_states']:
+        state['cycle_id'] = 99
+    path.write_text(json.dumps(legacy))
     result = client.get('/api/v1/state/latest').json()
+    assert 'cycle_id' not in result
+    assert all('cycle_id' not in state for state in result['equipment_states'])
     assert result['prediction']['stable_flag']==0
     assert result['model_version']=='v-test'
 

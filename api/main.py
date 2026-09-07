@@ -61,7 +61,6 @@ class PredictionBlock(BaseModel):
 class StateLatestResponse(BaseModel):
     model_config = ConfigDict(extra='allow')
     event_id: int
-    cycle_id: int
     elapsed_sec: int
     updated_at: str
     generated_at: Optional[str] = None
@@ -118,6 +117,10 @@ def get_state_latest():
     if not isinstance(states,list) or {state.get('equipment_id') for state in states} != {
         'station-01','station-02','station-03'}:
         raise HTTPException(status_code=503,detail='설비 3대의 상태가 모두 준비되지 않았습니다.')
+    # 구버전 상태 파일에 남은 가상 사이클 번호도 웹·Unity 계약에는 노출하지 않는다.
+    data.pop('cycle_id',None)
+    for state in states:
+        state.pop('cycle_id',None)
     # 한 설비가 멈춰도 다른 설비의 신선한 시각으로 덮어쓰지 않는다.
     for state in states:
         stamp = datetime.fromisoformat(state['generated_at'])

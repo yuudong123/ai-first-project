@@ -74,7 +74,7 @@ class EquipmentInference:
         sequence = self.states.get(equipment,{}).get('event_id',0)+1
         self.states[equipment] = {'equipment_id':equipment,'event_id':sequence,
             'run_id':payload.get('run_id',self.run_id),'segment_id':self.segments[equipment],
-            'cycle_id':(sequence-1)//60+1,'elapsed_sec':sequence,
+            'elapsed_sec':sequence,
             'generated_at':payload['timestamp'],'updated_at':now(),'received_at':now(),
             'sensors':{s:float(sensors[s]) for s in SENSORS},'prediction':prediction}
         self.event_id += 1

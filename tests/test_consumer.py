@@ -32,6 +32,7 @@ def test_interleaved_equipment_uses_independent_ten_sample_windows():
             assert result['equipment_states'][i]['prediction']['status']==('ready' if second==9 else 'warming_up')
     assert [s['prediction']['mean'] for s in result['equipment_states']]==[104.5,204.5,304.5]
     assert [s['event_id'] for s in result['equipment_states']]==[10,10,10]
+    assert all('cycle_id' not in state for state in result['equipment_states'])
     assert result['event_id']==30
 
 

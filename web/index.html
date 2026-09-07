@@ -1266,7 +1266,7 @@
   </head>
   <body>
     <!-- ==================== 상단 헤더 ====================
-     현재 선택 설비, API 수신 상태, 사이클/경과/수신 횟수를 표시한다. -->
+     현재 선택 설비, API 수신 상태, 경과시간과 수신 횟수를 표시한다. -->
     <header class="top-header">
       <div class="brand">
         <div class="brand-icon">H</div>
@@ -1285,10 +1285,6 @@
         </div>
         <div class="header-divider"></div>
         <div class="live-meta">
-          <div class="meta-item">
-            <span class="meta-label">사이클</span
-            ><span class="meta-value">#<span id="cycle-id">—</span></span>
-          </div>
           <div class="meta-item">
             <span class="meta-label">경과</span
             ><span class="meta-value"><span id="elapsed-sec">—</span>초</span>
@@ -2253,11 +2249,9 @@
       }
 
       // ==================== 헤더/연결 상태 갱신 ====================
-      // cycle_id, 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
+      // 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
       // 연결 상태와 AI 설비 위험도는 분리해서 표현한다.
       function updateHeader(data) {
-        document.getElementById("cycle-id").textContent =
-          data.cycle_id ?? data.event_id ?? "—";
         document.getElementById("elapsed-sec").textContent =
           data.elapsed_sec ?? "—";
 
@@ -2351,7 +2345,7 @@
         );
         history.labels.push(`#${data.event_id}`);
         SENSOR_ORDER.forEach((name) => {
-          // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
+          // 해당 시점에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
           history.sensors[name].push(
             data.sensors && name in data.sensors ? data.sensors[name] : null,
           );
@@ -2580,7 +2574,7 @@
           referenceBands = value;
           bandLoadFailed = false;
           document.getElementById("band-note").textContent =
-            `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
+            `음영: 정상 운전 기록 ${value.cycle_count}개의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
         } catch (error) {
           bandLoadFailed = true;
         }
