@@ -43,19 +43,36 @@ def test_invalid_array_is_rejected():
         build_rolling_features(np.zeros((2,59,17)),p.MEAN_FEATURE_COLUMNS)
 
 
-def test_schedule_reference_and_two_to_one_seed_ratio():
+def test_schedule_alternates_with_configured_interval():
     profile = np.array([[100,100,0,130,0],[20,80,2,90,1],[3,73,1,100,1]])
-    schedule = SeedSchedule(profile,seed=7)
+    schedule = SeedSchedule(
+        profile,seed=7,
+        minimum_interval_seconds=60,maximum_interval_seconds=60,
+    )
     assert schedule.select(0) == (0,0,True)
     assert schedule.select(119) == (0,0,True)
     assert schedule.select(120) == (0,0,True)
-    assert schedule.select(180) == (0,0,True)
-    seed,segment,reference = schedule.select(240)
+    assert schedule.select(179) == (0,0,True)
+    seed,segment,reference = schedule.select(180)
     assert profile[seed,4] == 1 and segment == 1 and not reference
-    assert schedule.select(299) == (seed,segment,reference)
-    assert schedule.select(300) == (0,2,True)
-    flags = [profile[schedule.select(t)[0],4] for t in range(480,480+180*10,60)]
-    assert flags.count(0) == 20 and flags.count(1) == 10
+    assert schedule.select(239) == (seed,segment,reference)
+    assert schedule.select(240) == (0,2,True)
+
+
+def test_schedule_random_intervals_stay_between_one_and_ten_minutes():
+    profile = np.array([[100,100,0,130,0],[20,80,2,90,1]])
+    schedule = SeedSchedule(profile,seed=17)
+    transitions=[]
+    previous_segment=0
+    for second in range(1,3601):
+        _,segment,_=schedule.select(second)
+        if segment != previous_segment:
+            transitions.append(second)
+            previous_segment=segment
+    gaps=[transitions[0]-120]+[
+        current-previous for previous,current in zip(transitions,transitions[1:])
+    ]
+    assert gaps and all(60 <= gap <= 600 for gap in gaps)
 
 
 @pytest.mark.parametrize('change', [{'segment_id':1},{'run_id':'new'},{'event_id':12}])
@@ -63,6 +80,13 @@ def test_window_resets_at_segment_run_or_message_gap(change):
     data = {'run_id':'run','event_id':11,'segment_id':0}
     assert not window_discontinuity('run',10,0,data)
     assert window_discontinuity('run',10,0,{**data,**change})
+
+
+def test_independent_station_checkpoints_allow_up_to_sixty_second_gap():
+    from src.runtime.monitor import recent_checkpoint_set
+    assert recent_checkpoint_set([300,340,360])
+    assert not recent_checkpoint_set([300,361,360])
+    assert not recent_checkpoint_set([300,None,340])
 
 
 def test_legacy_message_and_first_message():

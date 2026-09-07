@@ -50,6 +50,14 @@ def aggregate_offsets(states):
     return result
 
 
+def recent_checkpoint_set(checkpoints, maximum_gap=60):
+    """독립 설비의 최근 점검 시점이 비교 가능한 범위인지 확인한다."""
+    return (
+        all(checkpoint is not None for checkpoint in checkpoints)
+        and max(checkpoints)-min(checkpoints) <= maximum_gap
+    )
+
+
 def public_equipment_states(states):
     return [{
         'equipment_id':equipment,
@@ -157,8 +165,12 @@ def main():
             busy = False
 
         checkpoints = [states[key]['checkpoint_event'] for key in EQUIPMENT_IDS]
-        if checkpoints[0] is not None and len(set(checkpoints))==1 and checkpoints[0]!=processed_checkpoint:
-            processed_checkpoint = checkpoints[0]
+        checkpoint_signature = tuple(checkpoints)
+        # 설비별 운전 전환 시점이 다르므로 같은 이벤트 번호를 강제하지 않는다.
+        # 각 설비의 최근 60초 점검 결과가 모였을 때 공통 드리프트를 확인한다.
+        checkpoints_are_recent = recent_checkpoint_set(checkpoints)
+        if checkpoints_are_recent and checkpoint_signature!=processed_checkpoint:
+            processed_checkpoint = checkpoint_signature
             means = reference_means(states)
             offsets = aggregate_offsets(states)
             confirmed = all(states[key]['result'].get('drift_detected') and
@@ -198,7 +210,7 @@ def main():
             'equipment_ids':list(EQUIPMENT_IDS),'equipment_states':equipment_results,
             'drift_detected':overall=='drift','estimated_offsets':offsets,
             'last_requested_offsets':last_requested,
-            'confirmation_rule':'동일 시점에 설비 3대가 모두 드리프트와 안정된 offset을 확인해야 재학습 요청',
+            'confirmation_rule':'설비 3대의 최근 60초 점검에서 공통 드리프트와 안정된 offset을 확인해야 재학습 요청',
         })
         log.info(json.dumps({'timestamp':data['timestamp'],'equipment_id':equipment,
             'sensors':sensors,'status':state['result']['status']},ensure_ascii=False))

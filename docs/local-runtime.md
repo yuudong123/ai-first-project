@@ -46,7 +46,7 @@ API는 `equipment_states`에 세 설비가 모두 있어야 정상 응답한다.
 ## 생성 시나리오와 드리프트
 
 - 최초 120초: 설비마다 서로 다른 정상·안정 초기값
-- 이후: 안정 초기값 120초, 불안정 초기값 60초 반복
+- 이후: 설비마다 독립적으로 60~600초 사이의 무작위 간격으로 안정·불안정 상태 전환
 - 온도: 세 설비에 공통으로 -4~+4°C 범위의 계절 offset
 - 압력: 세 설비의 각 기준 압력에서 -10~+10% 범위
 - 다음 드리프트: 이전 시작 후 무작위 60~1,200초
@@ -59,9 +59,10 @@ API는 `equipment_states`에 세 설비가 모두 있어야 정상 응답한다.
 초기 사이클 라벨과 주입 offset은 진단 기록일 뿐 생성값의 정답으로 사용하지 않는다.
 부품·안정 상태는 각 설비의 실제 생성값을 10초 모델에 넣은 결과만 화면에 표시한다.
 
-드리프트 감지기는 설비별 초기 기준과 이동 구간을 따로 유지한다. 같은 검사 시점에 세 설비가
-모두 드리프트를 확인하고 offset이 안정됐을 때만 중앙값 offset으로 공통 분류 모델의 재학습을
-요청한다. 불안정 초기값 구간은 계절 변화 학습에서 제외한다.
+드리프트 감지기는 설비별 초기 기준과 이동 구간을 따로 유지한다. 설비별 운전 전환 시점이
+서로 다르므로, 세 설비의 최근 60초 점검에서 공통 드리프트와 안정된 offset이 확인됐을 때만
+중앙값 offset으로 공통 분류 모델의 재학습을 요청한다. 불안정 초기값 구간은 계절 변화
+학습에서 제외한다.
 
 ## 웹 이상 알림
 
@@ -84,7 +85,8 @@ DRIFT_INTERVAL_MIN_SEC=60
 DRIFT_INTERVAL_MAX_SEC=1200
 DRIFT_RAMP_SEC=30
 INITIAL_NORMAL_SEC=120
-OPERATING_SEGMENT_SEC=60
+OPERATING_INTERVAL_MIN_SEC=60
+OPERATING_INTERVAL_MAX_SEC=600
 UNITY_WEBGL_HOST_PATH=D:/ai-first-project/artifacts/unity/ai-labels/pro-build
 WEB_BIND_ADDRESS=127.0.0.1
 WEB_PORT=8000

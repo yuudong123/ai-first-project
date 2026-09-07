@@ -32,6 +32,8 @@ Set-DefaultEnvValue 'MODEL_HOST_DIR' "$projectPath/models"
 Set-DefaultEnvValue 'STATE_HOST_DIR' "$projectPath/artifacts/runtime"
 Set-DefaultEnvValue 'GIT_REPOSITORY_URL' 'https://github.com/yuudong123/ai-first-project.git'
 Set-DefaultEnvValue 'GIT_DEPLOY_BRANCH' 'dev'
+Set-DefaultEnvValue 'OPERATING_INTERVAL_MIN_SEC' '60'
+Set-DefaultEnvValue 'OPERATING_INTERVAL_MAX_SEC' '600'
 docker compose config --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Compose 설정 검증 실패' }
 if (-not $SkipBuild) {

@@ -212,7 +212,7 @@ def validate_seed_records(
 
 
 class MixedSeedController:
-    """설비별 기준 초기값을 유지하며 안정 2구간·불안정 1구간을 반복한다."""
+    """설비별 기준 초기값과 독립적인 안정·불안정 전환 일정을 유지한다."""
 
     def __init__(
         self,
@@ -221,7 +221,8 @@ class MixedSeedController:
         runtimes,
         seed=None,
         initial_seconds=120,
-        segment_seconds=60,
+        minimum_interval_seconds=60,
+        maximum_interval_seconds=600,
     ):
         from src.runtime.seed_schedule import SeedSchedule
         self.raw_data = raw_data
@@ -234,7 +235,8 @@ class MixedSeedController:
                 profiles, reference_seed=runtimes[equipment_id].seed_record,
                 seed=None if seed is None else seed+index,
                 initial_seconds=initial_seconds,
-                segment_seconds=segment_seconds,
+                minimum_interval_seconds=minimum_interval_seconds,
+                maximum_interval_seconds=maximum_interval_seconds,
             )
             # 같은 불안정 초기값을 동시에 골라 설비 출력이 복제되는 것을 방지한다.
             schedule.unstable_pool = schedule.unstable_pool[index::len(EQUIPMENT_IDS)]

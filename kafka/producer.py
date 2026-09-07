@@ -171,7 +171,8 @@ def main() -> None:
         runtimes,
         seed=args.seed,
         initial_seconds=scenario_config.initial_normal_seconds,
-        segment_seconds=int(os.getenv("OPERATING_SEGMENT_SEC", "60")),
+        minimum_interval_seconds=int(os.getenv("OPERATING_INTERVAL_MIN_SEC", "60")),
+        maximum_interval_seconds=int(os.getenv("OPERATING_INTERVAL_MAX_SEC", "600")),
     )
     season = RandomSeason(scenario_config, seed=args.seed)
     baseline_values = {equipment_id: [] for equipment_id in EQUIPMENT_IDS}
@@ -199,7 +200,7 @@ def main() -> None:
     print(f"초기값             : {DEFAULT_SEED_RECORDS}")
     print(f"검증된 상태         : {[seed.profile for seed in seeds]}")
     print(f"실행 시간           : {args.seconds or '제한 없음'}초")
-    print("운전 시나리오       : 최초 정상 120초 → 정상 120초 / 불안정 60초 반복")
+    print("운전 시나리오       : 설비별로 1~10분마다 안정·불안정 상태 전환")
     print("초기값 전환         : 10초 완만한 전환", flush=True)
 
     next_tick = time.monotonic()

@@ -87,7 +87,7 @@ def test_station_difference_check_rejects_identical_values():
         assert_station_values_differ(values)
 
 
-def mixed_controller(seed=42):
+def mixed_controller(seed=42, minimum_interval=60, maximum_interval=60):
     profiles=np.tile([100,100,0,130,0],(12,1))
     profiles[3:,4]=1
     raw=np.asarray([np.full((60,17),index,dtype=np.float32) for index in range(12)])
@@ -96,17 +96,21 @@ def mixed_controller(seed=42):
               for index,equipment in enumerate(EQUIPMENT_IDS)}
     for index,runtime in enumerate(runtimes.values()):
         runtime.seed_record=index
-    return MixedSeedController(raw,profiles,runtimes,seed=seed)
+    return MixedSeedController(
+        raw,profiles,runtimes,seed=seed,
+        minimum_interval_seconds=minimum_interval,
+        maximum_interval_seconds=maximum_interval,
+    )
 
 
-def test_mixed_seeds_follow_120_initial_then_120_stable_60_unstable():
+def test_mixed_seeds_alternate_stable_and_unstable_after_initial_period():
     controller=mixed_controller()
     counts={equipment:{0:0,1:0} for equipment in EQUIPMENT_IDS}
     shared_model=controller.runtimes['station-01'].model
     stable_runtime=controller.runtimes['station-01']
     for second in range(480):
         controller.advance(second)
-        expected=1 if second>=120 and (second-120)//60%3==2 else 0
+        expected=0 if second<180 else 1 if (second-180)//60%2==0 else 0
         records=[]
         for equipment,choice in controller.choices.items():
             assert choice['seed_stable_flag']==expected
@@ -118,19 +122,26 @@ def test_mixed_seeds_follow_120_initial_then_120_stable_60_unstable():
                 assert np.all(values==choice['seed_record'])
             records.append(choice['seed_record'])
         assert len(set(records))==3
-        if second==239:
+        if second==179:
             assert controller.runtimes['station-01'] is stable_runtime
-    assert all(count=={0:240,1:120} for count in counts.values())
+    assert all(count=={0:180,1:180} for count in counts.values())
+
+
+def test_each_station_has_an_independent_random_transition_time():
+    controller=mixed_controller(minimum_interval=60,maximum_interval=600)
+    transitions=[schedule.next_transition for schedule in controller.schedules.values()]
+    assert all(180 <= second <= 720 for second in transitions)
+    assert len(set(transitions)) == len(EQUIPMENT_IDS)
 
 
 def test_mixed_transition_resets_phase_and_reuses_reference_on_return():
     controller=mixed_controller()
     controller.advance(0)
     controller.runtimes['station-01'].predict_next()
-    controller.advance(240)
+    controller.advance(180)
     assert all(choice['segment_id']==1 for choice in controller.choices.values())
     assert all(runtime.cycle_position==29 for runtime in controller.runtimes.values())
-    controller.advance(300)
+    controller.advance(240)
     assert [runtime.seed_record for runtime in controller.runtimes.values()]==[0,1,2]
     assert all(choice['segment_id']==2 for choice in controller.choices.values())
 
@@ -140,14 +151,14 @@ def test_mixed_transition_smoothly_reaches_new_series_in_ten_seconds():
     controller.advance(0)
     previous=controller.runtimes['station-01'].predict_next()
 
-    controller.advance(240)
+    controller.advance(180)
     runtime=controller.runtimes['station-01']
     target=float(runtime.seed_record)
     assert runtime.transition_active
     assert controller.choices['station-01']['reference_context'] is False
 
     values=[]
-    for elapsed in range(240,250):
+    for elapsed in range(180,190):
         controller.advance(elapsed)
         values.append(float(controller.runtimes['station-01'].predict_next()[0]))
 
@@ -159,23 +170,23 @@ def test_mixed_transition_smoothly_reaches_new_series_in_ten_seconds():
 
 def test_return_to_stable_is_not_drift_reference_during_transition():
     controller=mixed_controller()
-    controller.advance(240)
-    for elapsed in range(240,250):
+    controller.advance(180)
+    for elapsed in range(180,190):
         controller.advance(elapsed)
         controller.runtimes['station-01'].predict_next()
 
-    controller.advance(300)
+    controller.advance(240)
     assert controller.choices['station-01']['reference_context'] is False
-    for elapsed in range(300,310):
+    for elapsed in range(240,250):
         controller.advance(elapsed)
         controller.runtimes['station-01'].predict_next()
-    controller.advance(310)
+    controller.advance(250)
     assert controller.choices['station-01']['reference_context'] is True
 
 
 def test_mixed_seed_selection_is_reproducible():
     first,second=mixed_controller(),mixed_controller()
-    for elapsed in (0,240,300,420,480,600):
+    for elapsed in (0,180,240,300,360,420):
         first.advance(elapsed);second.advance(elapsed)
         assert first.choices==second.choices
 
