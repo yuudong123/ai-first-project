@@ -151,7 +151,7 @@ services:
     # 로컬 시연용 Docker 소켓 권한. 외부 공개 서버에서는 별도 에이전트로 분리한다.
     user: "0:0"
     restart: unless-stopped
-    env_file: .env
+    env_file: ${PROJECT_ENV_FILE:-.env}
     environment:
       JAVA_OPTS: -Djenkins.install.runSetupWizard=false -Xms256m -Xmx768m
       GIT_REPOSITORY_URL: ${GIT_REPOSITORY_URL:-https://github.com/yuudong123/ai-first-project.git}
