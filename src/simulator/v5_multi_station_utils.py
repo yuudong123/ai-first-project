@@ -23,6 +23,7 @@ from v5_generation_utils import (
 
 
 EQUIPMENT_IDS = ("station-01", "station-02", "station-03")
+OPERATING_TRANSITION_SECONDS = 10
 DEFAULT_SEED_RECORDS = {
     "station-01": 1790,
     "station-02": 1793,
@@ -88,6 +89,28 @@ class V5StationRuntime:
         self.seed_max = seed_window.max(axis=0).astype(np.float64)
         self.ps4_index = int(ps4_index)
         self.current_sensors = seed_window[-1].astype(np.float64, copy=True)
+        self._transition_source = None
+        self._transition_step = 0
+        self._transition_seconds = 0
+
+    @property
+    def transition_active(self) -> bool:
+        return self._transition_source is not None
+
+    def begin_transition(
+        self,
+        previous_sensors: Sequence[float],
+        seconds: int = OPERATING_TRANSITION_SECONDS,
+    ) -> None:
+        """이전 운전값에서 새 초기값 기반 시계열로 부드럽게 전환한다."""
+        previous = np.asarray(previous_sensors, dtype=np.float64)
+        if previous.shape != (SENSOR_COUNT,) or not np.isfinite(previous).all():
+            raise ValueError("Transition source must contain 17 finite sensors")
+        if seconds < 2:
+            raise ValueError("Operating transition must last at least two seconds")
+        self._transition_source = previous.copy()
+        self._transition_step = 0
+        self._transition_seconds = int(seconds)
 
     @property
     def cycle_position(self) -> int:
@@ -133,7 +156,20 @@ class V5StationRuntime:
             ],
             axis=1,
         )
-        self.current_sensors = next_sensor.astype(np.float64, copy=True)
+        emitted_sensor = next_sensor
+        if self._transition_source is not None:
+            progress = self._transition_step / (self._transition_seconds - 1)
+            # 시작과 끝의 변화율을 낮춰 직선 보간보다 자연스럽게 연결한다.
+            eased = progress * progress * (3.0 - 2.0 * progress)
+            emitted_sensor = (
+                self._transition_source
+                + (next_sensor - self._transition_source) * eased
+            )
+            self._transition_step += 1
+            if self._transition_step >= self._transition_seconds:
+                self._transition_source = None
+
+        self.current_sensors = emitted_sensor.astype(np.float64, copy=True)
         return self.current_sensors.copy()
 
 
@@ -202,17 +238,22 @@ class MixedSeedController:
             record, segment_id, reference = schedule.select(elapsed)
             runtime = self.runtimes[equipment_id]
             if record != runtime.seed_record:
-                self.runtimes[equipment_id] = V5StationRuntime(
+                next_runtime = V5StationRuntime(
                     equipment_id=equipment_id, seed_record=record, model=runtime.model,
                     input_scaler=runtime.input_scaler, offset_scaler=runtime.offset_scaler,
                     sensor_min=runtime.sensor_min, sensor_max=runtime.sensor_max,
                     seed_window=self.raw_data[record, :WINDOW_SIZE], ps4_index=runtime.ps4_index,
                 )
+                next_runtime.begin_transition(runtime.current_sensors)
+                self.runtimes[equipment_id] = next_runtime
                 changes.append(equipment_id)
+                runtime = next_runtime
             # 초기 라벨은 생성기의 점검 기록에만 남긴다. AI 입력이나 정답으로 전달하지 않는다.
             self.choices[equipment_id] = {
                 'seed_record':record, 'seed_stable_flag':int(self.profiles[record, 4]),
-                'segment_id':segment_id, 'reference_context':reference,
+                'segment_id':segment_id,
+                # 안정 운전으로 돌아가는 중간값도 계절 기준 데이터에는 사용하지 않는다.
+                'reference_context':reference and not runtime.transition_active,
             }
         return changes
 
