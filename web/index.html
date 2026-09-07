@@ -728,58 +728,115 @@
         padding-top: 10px;
         border-top: 1px solid var(--border-soft);
       }
-      .anomaly-section-title {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 7px;
-        font-size: 11px;
-        color: var(--text-secondary);
-      }
+
       #diag-list {
         display: flex;
         flex-direction: column;
         gap: 7px;
       }
-      .anomaly-card {
-        padding: 8px 9px;
-        border: 1px solid var(--border-soft);
+      /* 우측 패널 AI 이상 요약 카드 */
+      .ai-alert-summary {
+        padding: 10px;
+        border: 1px solid rgba(251, 191, 36, 0.22);
         border-radius: 5px;
-        background: var(--bg-base);
-        font-size: 10.5px;
-        color: var(--text-secondary);
+        background: rgba(251, 191, 36, 0.07);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
-      .anomaly-card.caution {
-        border-color: rgba(251, 191, 36, 0.3);
-        background: rgba(251, 191, 36, 0.045);
-      }
-      .anomaly-card.warning {
+
+      .ai-alert-summary.warning {
         border-color: rgba(251, 146, 60, 0.3);
-        background: rgba(251, 146, 60, 0.045);
+        background: rgba(251, 146, 60, 0.07);
       }
-      .anomaly-card.danger {
-        border-color: rgba(248, 113, 113, 0.3);
-        background: rgba(248, 113, 113, 0.045);
+
+      .ai-alert-summary.danger {
+        border-color: rgba(248, 113, 113, 0.32);
+        background: rgba(248, 113, 113, 0.07);
       }
-      .anomaly-card-head {
+
+      .ai-alert-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 5px;
-        color: var(--text-primary);
+        gap: 8px;
       }
-      .anomaly-card-head > span:first-child {
+
+      .ai-alert-title {
         display: flex;
         align-items: center;
-        gap: 6px;
-        font-weight: 600;
+        gap: 5px;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--caution);
       }
-      .anomaly-card p + p {
-        margin-top: 3px;
+
+      .ai-alert-title .health-dot {
+        width: 7px;
+        height: 7px;
       }
-      .anomaly-card strong {
+
+      .ai-alert-summary.warning .ai-alert-title {
+        color: var(--warning);
+      }
+
+      .ai-alert-summary.danger .ai-alert-title {
+        color: var(--danger);
+      }
+
+      .ai-alert-level {
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid rgba(251, 191, 36, 0.4);
+        background: rgba(251, 191, 36, 0.12);
+        color: var(--caution);
+        font: 600 9px var(--font-mono);
+        white-space: nowrap;
+      }
+
+      .ai-alert-summary.warning .ai-alert-level {
+        color: var(--warning);
+        border-color: rgba(251, 146, 60, 0.45);
+        background: rgba(251, 146, 60, 0.12);
+      }
+
+      .ai-alert-summary.danger .ai-alert-level {
+        color: var(--danger);
+        border-color: rgba(248, 113, 113, 0.45);
+        background: rgba(248, 113, 113, 0.12);
+      }
+
+      .ai-alert-message {
+        font-size: 10px;
+        color: var(--text-secondary);
+        line-height: 1.5;
+      }
+
+      .ai-alert-message strong {
         color: var(--text-primary);
-        font-weight: 500;
+      }
+
+      .ai-alert-message .factor {
+        color: var(--caution);
+        font-family: var(--font-mono);
+      }
+
+      .ai-alert-detail-button {
+        width: 100%;
+        padding: 5px 8px;
+        border: 1px solid rgba(251, 191, 36, 0.45);
+        border-radius: 4px;
+        background: rgba(251, 191, 36, 0.15);
+        color: var(--caution);
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: 0.15s;
+      }
+
+      .ai-alert-detail-button:hover {
+        background: rgba(251, 191, 36, 0.24);
+        border-color: var(--caution);
       }
       .normal-detail {
         padding: 10px;
@@ -888,6 +945,98 @@
         white-space: nowrap;
       }
 
+      /* ==================== AI 주요 영향 센서 분석 ==================== */
+      .ai-sensor-analysis.hidden {
+        display: none;
+      }
+
+      .ai-sensor-analysis-body {
+        padding: 12px 14px 14px;
+        background: var(--bg-base);
+      }
+
+      .ai-sensor-analysis-note {
+        margin-bottom: 10px;
+        font-size: 10.5px;
+        line-height: 1.55;
+        color: var(--text-secondary);
+      }
+
+      .ai-sensor-analysis-note strong {
+        color: var(--caution);
+      }
+
+      .ai-sensor-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .ai-sensor-chart-card {
+        min-width: 0;
+        border: 1px solid var(--border-soft);
+        border-radius: 6px;
+        background: var(--bg-panel);
+        overflow: hidden;
+      }
+
+      .ai-sensor-chart-head {
+        min-height: 40px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border-soft);
+        background: var(--bg-panel-2);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .ai-sensor-chart-title {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        font: 600 10.5px var(--font-mono);
+        color: var(--text-primary);
+      }
+
+      .ai-sensor-rank {
+        width: 19px;
+        height: 19px;
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border-radius: 4px;
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.08);
+        color: var(--caution);
+        font: 700 9px var(--font-mono);
+      }
+
+      .ai-sensor-chart-meta {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font: 9px var(--font-mono);
+        color: var(--text-dim);
+      }
+
+      .ai-sensor-chart-wrap {
+        height: 190px;
+        padding: 8px 10px 10px;
+        background: var(--bg-base);
+      }
+
+      @media (max-width: 1100px) {
+        .ai-sensor-chart-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .ai-sensor-chart-wrap {
+          height: 210px;
+        }
+      }
+
       .footer {
         padding: 8px 20px;
         border-top: 1px solid var(--border-soft);
@@ -903,7 +1052,7 @@
         font-family: var(--font-mono);
       }
 
-      /* ---------- 이상 상세 모달 ---------- */
+      /* ==================== 이상 상세 모달 ==================== */
       body.modal-open {
         overflow: hidden;
       }
@@ -1266,7 +1415,7 @@
   </head>
   <body>
     <!-- ==================== 상단 헤더 ====================
-     현재 선택 설비, API 수신 상태, 경과시간과 수신 횟수를 표시한다. -->
+     현재 선택 설비, API 수신 상태, 사이클/경과/수신 횟수를 표시한다. -->
     <header class="top-header">
       <div class="brand">
         <div class="brand-icon">H</div>
@@ -1285,6 +1434,10 @@
         </div>
         <div class="header-divider"></div>
         <div class="live-meta">
+          <div class="meta-item">
+            <span class="meta-label">사이클</span
+            ><span class="meta-value">#<span id="cycle-id">—</span></span>
+          </div>
           <div class="meta-item">
             <span class="meta-label">경과</span
             ><span class="meta-value"><span id="elapsed-sec">—</span>초</span>
@@ -1415,10 +1568,6 @@
               [ 전체 17개 센서 보기 ]
             </button>
             <section class="anomaly-section" id="anomaly-detail">
-              <div class="anomaly-section-title">
-                <span>AI 진단 / 활성 이상</span
-                ><span class="card-meta">10초 관측 기반</span>
-              </div>
               <div id="diag-list">
                 <div class="empty-state compact">예측 결과 대기 중</div>
               </div>
@@ -1461,6 +1610,72 @@
               >💡 <strong>AI 분석 소견:</strong>
               <span id="ai-insight">예측 결과를 기다리고 있습니다.</span></span
             ><span id="model-label">AI 상태 분류 + 영향 센서 분석</span>
+          </div>
+        </div>
+      </section>
+      <!-- ==================== AI 주요 영향 센서 분석 ==================== -->
+      <section class="card ai-sensor-analysis hidden" id="ai-sensor-analysis">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-dot"></span>
+            AI 주요 영향 센서 분석
+          </div>
+          <span class="card-meta" id="ai-analysis-summary">
+            상위 영향 센서 대기
+          </span>
+        </div>
+
+        <div class="ai-sensor-analysis-body">
+          <div class="ai-sensor-analysis-note" id="ai-analysis-note">
+            AI 이상 판정에 영향을 준
+            <strong>상위 센서 3개</strong>의 최근 추이를 비교합니다.
+          </div>
+
+          <div class="ai-sensor-chart-grid">
+            <article class="ai-sensor-chart-card" id="ai-sensor-panel-1">
+              <div class="ai-sensor-chart-head">
+                <div class="ai-sensor-chart-title">
+                  <span class="ai-sensor-rank">1</span>
+                  <span id="ai-sensor-title-1">—</span>
+                </div>
+                <span class="ai-sensor-chart-meta" id="ai-sensor-meta-1"
+                  >—</span
+                >
+              </div>
+              <div class="ai-sensor-chart-wrap">
+                <canvas id="ai-sensor-chart-1"></canvas>
+              </div>
+            </article>
+
+            <article class="ai-sensor-chart-card" id="ai-sensor-panel-2">
+              <div class="ai-sensor-chart-head">
+                <div class="ai-sensor-chart-title">
+                  <span class="ai-sensor-rank">2</span>
+                  <span id="ai-sensor-title-2">—</span>
+                </div>
+                <span class="ai-sensor-chart-meta" id="ai-sensor-meta-2"
+                  >—</span
+                >
+              </div>
+              <div class="ai-sensor-chart-wrap">
+                <canvas id="ai-sensor-chart-2"></canvas>
+              </div>
+            </article>
+
+            <article class="ai-sensor-chart-card" id="ai-sensor-panel-3">
+              <div class="ai-sensor-chart-head">
+                <div class="ai-sensor-chart-title">
+                  <span class="ai-sensor-rank">3</span>
+                  <span id="ai-sensor-title-3">—</span>
+                </div>
+                <span class="ai-sensor-chart-meta" id="ai-sensor-meta-3"
+                  >—</span
+                >
+              </div>
+              <div class="ai-sensor-chart-wrap">
+                <canvas id="ai-sensor-chart-3"></canvas>
+              </div>
+            </article>
           </div>
         </div>
       </section>
@@ -1578,7 +1793,7 @@
       const MAX_HISTORY = 30;
       const STALE_MS = 4000; // event_id가 이만큼(ms) 안 바뀌면 "데이터 지연"으로 간주
 
-      // ---------- Unity WebGL 연동 설정 ----------
+      // ==================== Unity WebGL 연동 설정 ====================
       // Build 폴더를 web/index.html과 같은 위치(web/Build/)에 복사해서 넣어야 함.
       // 실제 파일명: pro-build.loader.js, pro-build.data.gz, pro-build.framework.js.gz, pro-build.wasm.gz
       const UNITY_BUILD_FOLDER = "Build";
@@ -1803,9 +2018,9 @@
         const box = document.getElementById("modal-factors");
         if (!box) return;
         const factors = (
-          component?.top_sensors ||
-          component?.top_factors ||
-          []
+          component?.top_sensors?.length
+            ? component.top_sensors
+            : component?.top_factors || []
         ).slice(0, 3);
         if (!factors.length) {
           box.innerHTML =
@@ -1904,18 +2119,323 @@
         document.body.classList.remove("modal-open");
       }
 
-      // 모달의 "상세 보기" 클릭 시 최상위 영향 특징(예: PS2_mean)을 실제 센서(PS2)로 변환해 차트로 이동한다.
+      // ==================== AI 주요 영향 센서 3개 분석 ====================
+
+      // SHAP/top_sensors에서 실제 센서명을 찾고 중복 센서는 제거한다.
+      function getTopAnalysisSensors(component) {
+        const factors = [
+          ...(component?.top_sensors || []),
+          ...(component?.top_factors || []),
+        ];
+
+        const seen = new Set();
+        const result = [];
+
+        factors.forEach((factor) => {
+          const feature =
+            factor?.sensor || factor?.feature || factor?.name || null;
+
+          const sensor = sensorNameFromFeature(feature);
+
+          if (!sensor || seen.has(sensor)) return;
+
+          seen.add(sensor);
+
+          result.push({
+            sensor,
+            feature: feature || sensor,
+          });
+        });
+
+        return result.slice(0, 3);
+      }
+
+      // 기존 AI 분석용 차트를 제거한다.
+      function destroyAiSensorCharts() {
+        aiSensorCharts.forEach((chartItem) => {
+          chartItem?.destroy();
+        });
+
+        aiSensorCharts = [];
+      }
+
+      // AI 3개 센서 분석 영역을 숨긴다.
+      function hideAiSensorAnalysis() {
+        const section = document.getElementById("ai-sensor-analysis");
+
+        if (section) section.classList.add("hidden");
+
+        destroyAiSensorCharts();
+
+        aiAnalysisSensors = [];
+        aiAnalysisEquipmentId = null;
+        aiAnalysisContext = null;
+      }
+
+      // 센서 1개에 대한 Chart.js 그래프 생성
+      function createAiSensorChart(canvas, sensorName) {
+        const unit = SENSOR_UNITS[sensorName] || "";
+
+        return new Chart(canvas.getContext("2d"), {
+          type: "line",
+
+          data: {
+            labels: [],
+
+            datasets: [
+              {
+                label: unit ? `${sensorName} (${unit})` : sensorName,
+
+                data: [],
+
+                borderColor: "#2fe0c4",
+                backgroundColor: "rgba(47,224,196,0.08)",
+                borderWidth: 2,
+
+                pointRadius: (ctx) =>
+                  SensorBands.outside(
+                    ctx.raw,
+                    referenceBands?.sensors?.[sensorName],
+                  )
+                    ? 3
+                    : 0,
+
+                pointBackgroundColor: "#ffab55",
+                pointBorderColor: "#ffab55",
+
+                tension: 0,
+                fill: false,
+                spanGaps: false,
+                order: 0,
+              },
+
+              {
+                label: "기준 하한",
+                data: [],
+                borderColor: "rgba(80,190,150,.5)",
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: false,
+                order: 2,
+              },
+
+              {
+                label: "정상 운전 기준 범위",
+                data: [],
+                borderColor: "rgba(80,190,150,.5)",
+                backgroundColor: "rgba(80,190,150,.15)",
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: 1,
+                order: 2,
+              },
+            ],
+          },
+
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+
+            plugins: {
+              tooltip: {
+                filter: (item) => item.datasetIndex === 0,
+              },
+
+              legend: {
+                onClick: () => {},
+
+                labels: {
+                  filter: (item) => item.datasetIndex !== 1,
+                  color: "#7c8e9c",
+                  font: {
+                    family: "IBM Plex Mono",
+                    size: 9,
+                  },
+                  boxWidth: 9,
+                },
+              },
+            },
+
+            scales: {
+              x: {
+                ticks: {
+                  color: "#4d5c68",
+                  font: {
+                    family: "IBM Plex Mono",
+                    size: 9,
+                  },
+                  maxTicksLimit: 6,
+                },
+
+                grid: {
+                  color: "#1a2530",
+                },
+              },
+
+              y: {
+                ticks: {
+                  color: "#4d5c68",
+                  font: {
+                    size: 9,
+                  },
+                },
+
+                grid: {
+                  color: "#1a2530",
+                },
+              },
+            },
+          },
+        });
+      }
+
+      // AI 상위 센서 그래프에 최신 센서 이력을 반영한다.
+      function redrawAiSensorCharts() {
+        if (
+          !aiAnalysisEquipmentId ||
+          !aiAnalysisSensors.length ||
+          !aiSensorCharts.length
+        )
+          return;
+
+        const history = currentHistory(aiAnalysisEquipmentId);
+
+        aiAnalysisSensors.forEach((item, index) => {
+          const miniChart = aiSensorCharts[index];
+
+          if (!miniChart) return;
+
+          const sensorName = item.sensor;
+          const unit = SENSOR_UNITS[sensorName] || "";
+          const band = referenceBands?.sensors?.[sensorName];
+
+          const values = history.sensors[sensorName] || [];
+
+          const latestRaw = values.at(-1);
+
+          const latest = isValidSensorValue(latestRaw)
+            ? Number(latestRaw)
+            : null;
+
+          miniChart.data.labels = history.labels;
+
+          miniChart.data.datasets[0].data = values;
+
+          miniChart.data.datasets[1].data = history.labels.map(() =>
+            band ? band.lower : null,
+          );
+
+          miniChart.data.datasets[2].data = history.labels.map(() =>
+            band ? band.upper : null,
+          );
+
+          miniChart.update("none");
+
+          const title = document.getElementById(`ai-sensor-title-${index + 1}`);
+
+          const meta = document.getElementById(`ai-sensor-meta-${index + 1}`);
+
+          if (title) {
+            title.textContent = `${sensorName} · ${SENSOR_KIND[sensorName] || "센서"} (${unit})`;
+          }
+
+          if (meta) {
+            meta.textContent =
+              latest == null ? "현재값 —" : `현재 ${fmtNum(latest, 1)} ${unit}`;
+          }
+        });
+      }
+
+      // 3개 분석 그래프를 실제 화면에 만든다.
+      function renderAiSensorAnalysis() {
+        const section = document.getElementById("ai-sensor-analysis");
+
+        if (!section || !aiAnalysisSensors.length) return;
+
+        section.classList.remove("hidden");
+
+        destroyAiSensorCharts();
+
+        for (let index = 0; index < 3; index += 1) {
+          const item = aiAnalysisSensors[index];
+
+          const panel = document.getElementById(`ai-sensor-panel-${index + 1}`);
+
+          if (!item) {
+            if (panel) panel.style.display = "none";
+
+            continue;
+          }
+
+          if (panel) panel.style.display = "";
+
+          const canvas = document.getElementById(
+            `ai-sensor-chart-${index + 1}`,
+          );
+
+          if (!canvas) continue;
+
+          aiSensorCharts.push(createAiSensorChart(canvas, item.sensor));
+        }
+
+        const summary = document.getElementById("ai-analysis-summary");
+
+        const componentLabel =
+          COMPONENT_LABEL[aiAnalysisContext?.componentKey] || "이상 부품";
+
+        const level = aiAnalysisContext?.level || "caution";
+
+        if (summary) {
+          summary.textContent =
+            `${aiAnalysisEquipmentId.toUpperCase()} · ` +
+            `${componentLabel} ${statusText(level)} · ` +
+            `상위 ${aiAnalysisSensors.length}개`;
+        }
+
+        redrawAiSensorCharts();
+      }
+
+      // 모달의 "상세 보기 (센서 분석)" 실행
       function focusPrimaryFactor() {
         const found = getPrimaryAnomaly();
-        const top =
-          found?.[1]?.top_sensors?.[0]?.sensor ||
-          found?.[1]?.top_factors?.[0]?.feature;
-        const sensorName = sensorNameFromFeature(top);
+
+        if (!found) return;
+
+        const [componentKey, component] = found;
+
+        const sensors = getTopAnalysisSensors(component);
+
         closeAnomalyModal();
-        if (sensorName) selectSensor(sensorName);
-        document
-          .querySelector(".trend-card")
-          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        if (!sensors.length) {
+          return;
+        }
+
+        aiAnalysisEquipmentId = selectedEquipmentId;
+
+        aiAnalysisSensors = sensors;
+
+        aiAnalysisContext = {
+          componentKey,
+          level: riskClass(component.risk_level),
+        };
+
+        // 기존 단일 그래프도 1순위 센서로 맞춘다.
+        selectSensor(sensors[0].sensor);
+
+        renderAiSensorAnalysis();
+
+        document.getElementById("ai-sensor-analysis")?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       }
 
       window.addEventListener("keydown", (e) => {
@@ -1931,6 +2451,52 @@
       // Unity 3D에서 station-01~03 중 하나를 선택하면 웹의 센서/AI/차트도 같은 설비로 전환된다.
       const EQUIPMENT_IDS = ["station-01", "station-02", "station-03"];
       let selectedEquipmentId = "station-01";
+      // ==================== AI 경고 자동 팝업 상태 ====================
+      // warning / danger 진입 시에만 자동 팝업을 1회 표시한다.
+      // 같은 상태가 유지되는 동안에는 다시 자동으로 열지 않는다.
+      const AUTO_MODAL_RANK = {
+        normal: 0,
+        caution: 1,
+        warning: 2,
+        danger: 3,
+      };
+
+      const lastAutoModalLevelByEquipment = {};
+
+      function maybeAutoOpenAnomalyModal(level) {
+        const equipmentId = selectedEquipmentId;
+
+        const previousLevel =
+          lastAutoModalLevelByEquipment[equipmentId] || "normal";
+
+        const previousRank = AUTO_MODAL_RANK[previousLevel] ?? 0;
+        const currentRank = AUTO_MODAL_RANK[level] ?? 0;
+
+        // 자동 팝업 조건
+        // 1. normal/caution → warning/danger
+        // 2. warning → danger처럼 위험도가 상승
+        const shouldAutoOpen =
+          currentRank >= AUTO_MODAL_RANK.warning &&
+          (previousRank < AUTO_MODAL_RANK.warning ||
+            currentRank > previousRank);
+
+        // 현재 상태 저장
+        lastAutoModalLevelByEquipment[equipmentId] = level;
+
+        if (!shouldAutoOpen) return;
+
+        const modal = document.getElementById("anomaly-modal");
+
+        // 이미 열려있으면 또 열지 않는다.
+        if (modal?.classList.contains("open")) return;
+
+        // renderDiagnosis()가 끝난 뒤 현재 prediction으로 모달을 연다.
+        setTimeout(() => {
+          if (selectedEquipmentId === equipmentId) {
+            openAnomalyModal();
+          }
+        }, 0);
+      }
 
       let receivedCount = 0; // event_id가 실제로 바뀐 횟수 (중복 카운트 안 함)
       let chart = null;
@@ -1960,6 +2526,12 @@
       }
 
       let selectedSensor = "CE"; // 기본으로 보여줄 센서
+
+      // AI 상세 분석에서 표시할 상위 영향 센서 3개
+      let aiAnalysisSensors = [];
+      let aiAnalysisEquipmentId = null;
+      let aiAnalysisContext = null;
+      let aiSensorCharts = [];
 
       function fmtNum(n, digits = 1) {
         return Number(n).toLocaleString("ko-KR", {
@@ -2076,6 +2648,8 @@
           Object.keys(prediction.components).length > 0;
 
         if (!ready) {
+          hideAiSensorAnalysis();
+
           const message =
             prediction?.status === "stale"
               ? "해당 설비 데이터 지연 · 예측 갱신 대기"
@@ -2142,6 +2716,8 @@
         }
 
         if (anomalies.length === 0) {
+          hideAiSensorAnalysis();
+          maybeAutoOpenAnomalyModal("normal");
           if (missingKeys.length === 0) {
             if (alertBanner) alertBanner.className = "alert-banner normal";
             if (alertCount) alertCount.textContent = "현재 활성 이상 없음";
@@ -2206,31 +2782,39 @@
             twinBadge.textContent = `● ${label} 감지`;
           }
           if (detail) {
-            detail.innerHTML = anomalies
-              .map(([componentKey, component]) => {
-                const lv = riskClass(component.risk_level);
-                const top =
-                  (component.top_sensors || [])
-                    .map((s) => s.sensor)
-                    .filter(Boolean)
-                    .slice(0, 3)
-                    .join(", ") ||
-                  (component.top_factors || [])
-                    .map((f) => f.feature || f.name)
-                    .filter(Boolean)
-                    .slice(0, 3)
-                    .join(", ") ||
-                  "—";
-                const confidence = Number.isFinite(Number(component.confidence))
-                  ? `${(Number(component.confidence) * 100).toFixed(1)}%`
-                  : "—";
-                return `<div class="anomaly-card ${lv}">
-          <div class="anomaly-card-head"><span><span class="health-dot ${lv}"></span>${COMPONENT_LABEL[componentKey]}</span><span class="sensor-state-badge ${lv}">${statusText(lv)}</span></div>
-          <p>분류 <strong>${component.state ?? "—"}</strong> · 예측 확률 <strong>${confidence}</strong></p>
-          <p>주요 영향 센서: <strong>${top}</strong></p>
-        </div>`;
-              })
-              .join("");
+            detail.innerHTML = `
+              <div class="ai-alert-summary ${level}">
+                <div class="ai-alert-head">
+                  <div class="ai-alert-title">
+                    <span class="health-dot ${level}"></span>
+                    <span>⚠ AI 이상 감지 ${anomalies.length}건</span>
+                  </div>
+
+                  <span class="ai-alert-level">
+                    ${
+                      level === "caution"
+                        ? "점검 필요"
+                        : level === "warning"
+                          ? "경고"
+                          : "위험"
+                    }
+                  </span>
+                </div>
+
+                <div class="ai-alert-message">
+                  <strong>${COMPONENT_LABEL[key]} 점검 필요</strong>
+                  · <span class="factor">${factor} 패턴 변화 감지</span>
+                </div>
+
+                <button
+                  class="ai-alert-detail-button"
+                  type="button"
+                  onclick="openAnomalyModal()"
+                >
+                  이상 상세 보기 ▶
+                </button>
+              </div>
+            `;
           }
           if (aiInsight)
             aiInsight.textContent = `${COMPONENT_LABEL[key]}에서 ${statusText(level)} 상태가 감지되었습니다. ${factor}를 포함한 영향 센서 추이와 설비 상태를 함께 확인하세요.`;
@@ -2239,6 +2823,7 @@
             document.getElementById("anomaly-modal")?.classList.contains("open")
           )
             populateAnomalyModal(prediction);
+          maybeAutoOpenAnomalyModal(level); // warning / danger 진입 시 자동 팝업
         }
 
         if (modelLabel) {
@@ -2249,9 +2834,11 @@
       }
 
       // ==================== 헤더/연결 상태 갱신 ====================
-      // 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
+      // cycle_id, 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
       // 연결 상태와 AI 설비 위험도는 분리해서 표현한다.
       function updateHeader(data) {
+        document.getElementById("cycle-id").textContent =
+          data.cycle_id ?? data.event_id ?? "—";
         document.getElementById("elapsed-sec").textContent =
           data.elapsed_sec ?? "—";
 
@@ -2345,7 +2932,7 @@
         );
         history.labels.push(`#${data.event_id}`);
         SENSOR_ORDER.forEach((name) => {
-          // 해당 시점에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
+          // 해당 사이클에 값이 없으면 null로 채워서 라벨과 길이를 맞춘다
           history.sensors[name].push(
             data.sensors && name in data.sensors ? data.sensors[name] : null,
           );
@@ -2449,6 +3036,9 @@
           dirEl.className = `trend-value ${latest == null ? "flat" : trend.className}`;
         }
         if (windowEl) windowEl.textContent = `${windowSize}초`;
+
+        // AI 상세 분석 그래프도 최신 데이터로 갱신
+        redrawAiSensorCharts();
       }
 
       // API가 알려주는 observed_window_sec를 사용하고 값이 없으면 10초를 기본값으로 사용한다.
@@ -2574,7 +3164,7 @@
           referenceBands = value;
           bandLoadFailed = false;
           document.getElementById("band-note").textContent =
-            `음영: 정상 운전 기록 ${value.cycle_count}개의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
+            `음영: 정상 운전 ${value.cycle_count}개 사이클의 1초 평균에서 하위·상위 1%를 제외한 범위 · 주황색: 이탈 · 3개 연속 이탈 시 경고. 기준 고정 · 안전 한계/AI 고장 판단 아님 · 기준 표본이 적어 시연용`;
         } catch (error) {
           bandLoadFailed = true;
         }
@@ -2622,6 +3212,9 @@
 
       // 설비 선택이 바뀌면 station 라벨, 센서표, AI 진단, 차트를 마지막 수신 데이터로 즉시 다시 표시한다.
       function renderSelectedEquipment() {
+        // 설비가 바뀌면 이전 설비의 AI 상세 분석 그래프를 초기화한다.
+        hideAiSensorAnalysis();
+
         const labelEl = document.getElementById("unit-label");
         if (labelEl) labelEl.textContent = selectedEquipmentId.toUpperCase();
 
@@ -2680,7 +3273,9 @@
                 if (EQUIPMENT_IDS.includes(state.equipment_id))
                   updateChart(state, state.equipment_id);
               });
-            } else updateChart(data);
+            } else {
+              updateChart(data);
+            }
 
             // Unity에는 원본 응답을 그대로 전달 (설비 3대를 Unity가 각각 처리하도록)
             sendToUnity(payload);
@@ -2828,7 +3423,8 @@
       }
 
       // ==================== 페이지 최초 실행 ====================
-      // 1) 차트 생성 → 2) 사이드바 리사이저 → 3) 센서 기준범위 로드 → 4) Unity 로드 → 5) 즉시 API 조회 → 6) 이후 1초 폴링
+      // 1) 차트 생성 → 2) 사이드바 리사이저 초기화 → 3) 센서 기준범위 로드
+      // 4) Unity 로드 → 5) 즉시 API 조회 → 6) 이후 1초 폴링
       initChart();
       initResizers();
       loadReferenceBands();
