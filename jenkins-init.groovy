@@ -4,6 +4,7 @@ import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
 import org.jenkinsci.plugins.workflow.job.WorkflowJob
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition
 import org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty
+import hudson.triggers.SCMTrigger
 import hudson.plugins.git.GitSCM
 import hudson.plugins.git.UserRemoteConfig
 import hudson.plugins.git.BranchSpec
@@ -68,8 +69,10 @@ job.setDefinition(definition)
 job.removeProperty(GithubProjectProperty.class)
 job.addProperty(new GithubProjectProperty(repositoryUrl.replaceFirst(/\.git$/, '') + '/'))
 def pushTrigger = new GitHubPushTrigger()
+def pollTrigger = new SCMTrigger('* * * * *')
 job.removeProperty(PipelineTriggersJobProperty.class)
-job.addProperty(new PipelineTriggersJobProperty([pushTrigger]))
+job.addProperty(new PipelineTriggersJobProperty([pushTrigger, pollTrigger]))
 job.save()
 pushTrigger.start(job, true)
+pollTrigger.start(job, true)
 server.save()

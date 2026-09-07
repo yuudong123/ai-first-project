@@ -86,7 +86,9 @@ KAFKA_ADVERTISED_HOST=localhost
 
 ## GitHub 웹훅 자동 배포
 
-자동 배포 대상은 `dev` 브랜치 하나다. GitHub push가 들어오면 Jenkins가 다음 순서로 처리한다.
+자동 배포 대상은 `dev` 브랜치 하나다. GitHub 웹훅을 기본 트리거로 사용하고, 웹훅 전달이
+실패해도 복구할 수 있도록 `Poll SCM (* * * * *)`을 1분 간격 보조 트리거로 함께 사용한다.
+둘 중 하나가 새 커밋을 확인하면 Jenkins가 다음 순서로 처리한다.
 
 1. 비공개 GitHub 저장소에서 해당 `dev` 커밋과 `Jenkinsfile`을 받는다.
 2. `hydrotwin-app:candidate-빌드번호` 후보 이미지를 만든다.
