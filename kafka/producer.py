@@ -12,11 +12,12 @@ import time
 import uuid
 from pathlib import Path
 
+os.environ.setdefault("KERAS_BACKEND", "jax")
+
 import joblib
 import numpy as np
-import tensorflow as tf
+import keras
 from kafka import KafkaProducer
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -118,7 +119,7 @@ def load_runtime_resources():
     )
 
     # Intentional and auditable: the V5 Keras model is loaded exactly once.
-    model = tf.keras.models.load_model(MODEL_FILE, compile=False)
+    model = keras.models.load_model(MODEL_FILE, compile=False)
     input_scaler = joblib.load(INPUT_SCALER_FILE)
     offset_scaler = joblib.load(OFFSET_SCALER_FILE)
     return (

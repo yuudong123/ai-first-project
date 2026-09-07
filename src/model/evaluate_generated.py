@@ -3,7 +3,9 @@ import json
 import hashlib
 import numpy as np
 import joblib
-import tensorflow as tf
+import keras
+import os
+os.environ["KERAS_BACKEND"] = "jax"
 from sklearn.metrics import accuracy_score, recall_score, f1_score
 from src import hydrotwin_pipeline as p
 from src.features.rolling import build_rolling_features
@@ -22,7 +24,7 @@ def main():
     selected = profile.set_index('cycle_id').loc[ids]
     with np.load(p.PROCESSED_DIR/'simulator/uci_1hz_17sensors.npz') as data:
         records = data['data'][np.array(ids)-1]
-    generator = tf.keras.models.load_model(model_dir/'virtual_factory_generator_v5.keras',compile=False)
+    generator = keras.models.load_model(model_dir/'virtual_factory_generator_v5.keras',compile=False)
     with np.load(model_dir/'sensor_bounds_v5.npz') as bounds:
         generated = generate_from_seed_batch(generator,
             joblib.load(model_dir/'input_scaler_v5.joblib'),

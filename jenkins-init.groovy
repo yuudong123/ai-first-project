@@ -3,6 +3,7 @@ import hudson.security.HudsonPrivateSecurityRealm
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
 import org.jenkinsci.plugins.workflow.job.WorkflowJob
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition
+import org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty
 import hudson.plugins.git.GitSCM
 import hudson.plugins.git.UserRemoteConfig
 import hudson.plugins.git.BranchSpec
@@ -66,12 +67,9 @@ definition.setLightweight(true)
 job.setDefinition(definition)
 job.removeProperty(GithubProjectProperty.class)
 job.addProperty(new GithubProjectProperty(repositoryUrl.replaceFirst(/\.git$/, '') + '/'))
-job.getTriggers().values().findAll { it instanceof GitHubPushTrigger }.each {
-    it.stop()
-    job.removeTrigger(it.descriptor)
-}
 def pushTrigger = new GitHubPushTrigger()
-job.addTrigger(pushTrigger)
+job.removeProperty(PipelineTriggersJobProperty.class)
+job.addProperty(new PipelineTriggersJobProperty([pushTrigger]))
 job.save()
 pushTrigger.start(job, true)
 server.save()
