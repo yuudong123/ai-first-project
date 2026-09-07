@@ -2452,43 +2452,23 @@
       const EQUIPMENT_IDS = ["station-01", "station-02", "station-03"];
       let selectedEquipmentId = "station-01";
       // ==================== AI 경고 자동 팝업 상태 ====================
-      // warning / danger 진입 시에만 자동 팝업을 1회 표시한다.
-      // 같은 상태가 유지되는 동안에는 다시 자동으로 열지 않는다.
-      const AUTO_MODAL_RANK = {
-        normal: 0,
-        caution: 1,
-        warning: 2,
-        danger: 3,
-      };
-
-      const lastAutoModalLevelByEquipment = {};
+      // 같은 이상이 계속되거나 다시 발생해도 알리되, 시연 중 과도한 반복을 막기 위해
+      // 전체 자동 팝업 사이에 최소 30초 간격을 둔다.
+      const AUTO_MODAL_MIN_INTERVAL_MS = 30_000;
+      let lastAutoModalOpenedAt = 0;
 
       function maybeAutoOpenAnomalyModal(level) {
         const equipmentId = selectedEquipmentId;
-
-        const previousLevel =
-          lastAutoModalLevelByEquipment[equipmentId] || "normal";
-
-        const previousRank = AUTO_MODAL_RANK[previousLevel] ?? 0;
-        const currentRank = AUTO_MODAL_RANK[level] ?? 0;
-
-        // 자동 팝업 조건
-        // 1. normal/caution → warning/danger
-        // 2. warning → danger처럼 위험도가 상승
-        const shouldAutoOpen =
-          currentRank >= AUTO_MODAL_RANK.warning &&
-          (previousRank < AUTO_MODAL_RANK.warning ||
-            currentRank > previousRank);
-
-        // 현재 상태 저장
-        lastAutoModalLevelByEquipment[equipmentId] = level;
-
-        if (!shouldAutoOpen) return;
+        if (level !== "warning" && level !== "danger") return;
 
         const modal = document.getElementById("anomaly-modal");
 
         // 이미 열려있으면 또 열지 않는다.
         if (modal?.classList.contains("open")) return;
+        const openedAt = Date.now();
+        if (openedAt - lastAutoModalOpenedAt < AUTO_MODAL_MIN_INTERVAL_MS)
+          return;
+        lastAutoModalOpenedAt = openedAt;
 
         // renderDiagnosis()가 끝난 뒤 현재 prediction으로 모달을 연다.
         setTimeout(() => {
