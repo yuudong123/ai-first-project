@@ -2898,7 +2898,8 @@
       }
 
       // ==================== 차트 이력 적재 ====================
-      // 새 이벤트가 들어올 때 설비별 센서 이력을 추가한다. run/segment가 바뀌면 이전 구간과 선을 연결하지 않는다.
+      // 새 이벤트가 들어올 때 설비별 센서 이력을 추가한다.
+      // 프로듀서가 재시작되면 새 이력으로 시작하고, 운전 구간만 바뀌면 이력은 유지한 채 선만 끊는다.
       function updateChart(data, equipmentId = selectedEquipmentId) {
         const history = currentHistory(equipmentId);
         const previous = history.bandState;
@@ -2908,13 +2909,14 @@
           previous.event === data.event_id
         )
           return;
-        // 생성 초기값이 달라진 구간을 하나의 연속 그래프로 연결하지 않는다.
-        if (
-          previous &&
-          (previous.run !== data.run_id || previous.segment !== data.segment_id)
-        ) {
+        // 프로듀서 실행 자체가 바뀐 경우에만 이전 실행의 이력을 제거한다.
+        if (previous && previous.run !== data.run_id) {
           history.labels = [];
           SENSOR_ORDER.forEach((name) => (history.sensors[name] = []));
+        } else if (previous && previous.segment !== data.segment_id) {
+          // 안정/불안정 운전 구간 전환은 그래프를 초기화하지 않고 연결선만 끊는다.
+          history.labels.push("운전 전환");
+          SENSOR_ORDER.forEach((name) => history.sensors[name].push(null));
         } else if (
           previous &&
           (data.event_id !== previous.event + 1 ||
