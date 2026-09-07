@@ -963,7 +963,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        font: 600 11px var(--font-mono);
+        font: 600 12px var(--font-mono);
         color: var(--text-primary);
       }
 
@@ -971,17 +971,6 @@
         display: flex;
         align-items: center;
         gap: 8px;
-      }
-
-      .analysis-collapse-button {
-        padding: 4px 8px;
-        color: var(--accent);
-        border-color: rgba(47, 224, 196, 0.35);
-      }
-
-      .analysis-collapse-button:hover {
-        color: var(--accent);
-        border-color: var(--accent);
       }
 
       .ai-sensor-analysis-guide {
@@ -1010,7 +999,7 @@
 
       .ai-sensor-analysis-note {
         margin-bottom: 10px;
-        font-size: 10.5px;
+        font-size: 11px;
         line-height: 1.55;
         color: var(--text-secondary);
       }
@@ -1187,13 +1176,13 @@
         flex: 0 0 auto;
       }
       .modal-title {
-        font: 700 13px var(--font-display);
+        font: 700 15px var(--font-display);
         color: var(--text-primary);
         letter-spacing: 0.02em;
       }
       .modal-title small {
         margin-left: 5px;
-        font: 600 9px var(--font-mono);
+        font: 600 10px var(--font-mono);
         color: var(--caution);
       }
       .modal-close {
@@ -1230,7 +1219,7 @@
       .modal-summary-label {
         display: block;
         margin-bottom: 3px;
-        font-size: 9.5px;
+        font-size: 10.5px;
         color: var(--text-dim);
       }
       .modal-summary-value {
@@ -1238,7 +1227,7 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-size: 10.5px;
+        font-size: 12px;
         font-weight: 600;
         color: var(--text-primary);
       }
@@ -1259,7 +1248,7 @@
         display: flex;
         align-items: center;
         gap: 7px;
-        font-size: 10.5px;
+        font-size: 12px;
         color: var(--text-primary);
       }
       .modal-section-title h3::before {
@@ -1292,7 +1281,7 @@
         justify-content: space-between;
         gap: 12px;
         margin-bottom: 4px;
-        font: 9.5px var(--font-mono);
+        font: 10.5px var(--font-mono);
       }
       .factor-name {
         color: var(--text-secondary);
@@ -1324,8 +1313,9 @@
       .check-list {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        font-size: 10px;
+        gap: 8px;
+        font-size: 11.5px;
+        line-height: 1.65;
         color: var(--text-secondary);
       }
       .check-row {
@@ -1342,7 +1332,7 @@
         color: var(--caution);
       }
       .modal-note {
-        font-size: 9px;
+        font-size: 9.5px;
         color: var(--text-dim);
         line-height: 1.55;
       }
@@ -1481,7 +1471,7 @@
   </head>
   <body>
     <!-- ==================== 상단 헤더 ====================
-     현재 선택 설비, API 수신 상태, 데이터 순번/경과/수신 횟수를 표시한다. -->
+     현재 선택 설비, API 수신 상태, 경과/수신 횟수를 표시한다. -->
     <header class="top-header">
       <div class="brand">
         <div class="brand-icon">H</div>
@@ -1500,10 +1490,6 @@
         </div>
         <div class="header-divider"></div>
         <div class="live-meta">
-          <div class="meta-item">
-            <span class="meta-label">데이터 순번</span
-            ><span class="meta-value">#<span id="cycle-id">—</span></span>
-          </div>
           <div class="meta-item">
             <span class="meta-label">경과</span
             ><span class="meta-value"><span id="elapsed-sec">—</span>초</span>
@@ -1764,12 +1750,12 @@
               <div>
                 <div class="ai-sensor-analysis-title">
                   <span class="card-title-dot"></span>
-                  <span>AI 주요 영향 센서 실시간 분석</span>
+                  <span>AI 주요 영향 센서 이상 구간 분석</span>
                 </div>
 
                 <div class="ai-sensor-analysis-note" id="ai-analysis-note">
                   AI 이상 판정에 영향을 준
-                  <strong>상위 센서 3개</strong>의 최근 추이를 비교합니다.
+                  <strong>상위 센서 3개</strong>의 이상 구간 추이를 비교합니다.
                 </div>
               </div>
 
@@ -1779,7 +1765,7 @@
                 </span>
 
                 <button
-                  class="modal-button analysis-collapse-button"
+                  class="modal-button primary"
                   type="button"
                   onclick="collapseSensorAnalysis()"
                 >
@@ -1843,7 +1829,7 @@
               </div>
 
               <div class="ai-sensor-analysis-guide">
-                정상 운전 기준 범위와 실시간 센서 추이를 비교합니다.
+                정상 운전 기준 범위와 이상 구간 센서 추이를 비교합니다.
                 <strong>음영 영역</strong>은 정상 운전 기준 범위이며,
                 <strong>주황색 표시</strong>는 기준 범위 이탈을 의미합니다.
               </div>
@@ -2196,8 +2182,16 @@
 
       // 이상이 있을 때만 모달을 연다. 열리면 body 스크롤을 막고 뒤 화면은 CSS backdrop-filter로 흐려진다.
       function openAnomalyModal() {
-        if (!populateAnomalyModal()) return;
         const modal = document.getElementById("anomaly-modal");
+
+        // 이미 열린 팝업이면 기존 이상 기록을 새로 시작하지 않는다.
+        if (modal?.classList.contains("open")) return;
+
+        if (!populateAnomalyModal()) return;
+
+        // 팝업이 열린 순간부터 이상 구간 기록 시작
+        startAnomalyRecord();
+
         modal.classList.add("open");
         modal.setAttribute("aria-hidden", "false");
         document.body.classList.add("modal-open");
@@ -2211,6 +2205,9 @@
         modal.classList.remove("open");
         modal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
+
+        // 닫힌 팝업의 이상 구간 기록 제거
+        clearAnomalyRecord();
 
         // 다시 열 때는 기본 요약 팝업부터 시작
         hideAiSensorAnalysis();
@@ -2245,6 +2242,87 @@
         });
 
         return result.slice(0, 3);
+      }
+
+      // 이상 팝업이 열린 순간부터 이상 구간 기록을 시작한다.
+      function startAnomalyRecord(prediction = currentPrediction()) {
+        const found = getPrimaryAnomaly(prediction);
+
+        if (!found || !lastPayload) return false;
+
+        const [componentKey, component] = found;
+        const analysisSensors = getTopAnalysisSensors(component);
+        const data = pickEquipmentData(lastPayload);
+
+        if (!data || !analysisSensors.length) return false;
+
+        const eventKey = `${data.run_id || ""}:${data.event_id}`;
+
+        anomalyRecord = {
+          equipmentId: selectedEquipmentId,
+          componentKey,
+          level: riskClass(component.risk_level),
+
+          // 팝업이 열린 당시의 상위 영향 센서 3개를 끝까지 사용
+          analysisSensors: analysisSensors.map((item) => ({ ...item })),
+
+          labels: [`#${data.event_id}`],
+          sensors: {},
+          lastEventKey: eventKey,
+
+          // true인 동안만 이상 데이터를 추가한다.
+          active: true,
+        };
+
+        analysisSensors.forEach(({ sensor }) => {
+          anomalyRecord.sensors[sensor] = [
+            data.sensors && sensor in data.sensors
+              ? data.sensors[sensor]
+              : null,
+          ];
+        });
+
+        return true;
+      }
+
+      // 이상 상태가 유지되는 동안 새로운 센서값을 기록한다.
+      function appendAnomalyRecord() {
+        if (!anomalyRecord?.active || !lastPayload) return;
+
+        if (anomalyRecord.equipmentId !== selectedEquipmentId) return;
+
+        const data = pickEquipmentData(lastPayload);
+
+        if (!data) return;
+
+        const eventKey = `${data.run_id || ""}:${data.event_id}`;
+
+        // 같은 이벤트를 1초 폴링으로 여러 번 읽어도 중복 저장하지 않는다.
+        if (eventKey === anomalyRecord.lastEventKey) return;
+
+        anomalyRecord.lastEventKey = eventKey;
+        anomalyRecord.labels.push(`#${data.event_id}`);
+
+        anomalyRecord.analysisSensors.forEach(({ sensor }) => {
+          anomalyRecord.sensors[sensor].push(
+            data.sensors && sensor in data.sensors
+              ? data.sensors[sensor]
+              : null,
+          );
+        });
+      }
+
+      // 정상으로 돌아오면 이상 구간 기록을 종료한다.
+      // 데이터는 삭제하지 않고 팝업을 닫을 때까지 보관한다.
+      function finishAnomalyRecord() {
+        if (anomalyRecord) {
+          anomalyRecord.active = false;
+        }
+      }
+
+      // 팝업을 완전히 닫으면 이상 구간 기록도 제거한다.
+      function clearAnomalyRecord() {
+        anomalyRecord = null;
       }
 
       // 기존 AI 분석용 차트를 제거한다.
@@ -2402,7 +2480,7 @@
         });
       }
 
-      // AI 상위 센서 그래프에 최신 센서 이력을 반영한다.
+      // AI 상위 센서 그래프에 저장된 이상 구간 센서 이력을 반영한다.
       function redrawAiSensorCharts() {
         if (
           !aiAnalysisEquipmentId ||
@@ -2411,7 +2489,9 @@
         )
           return;
 
-        const history = currentHistory(aiAnalysisEquipmentId);
+        const history = anomalyRecord;
+
+        if (!history || history.equipmentId !== aiAnalysisEquipmentId) return;
 
         aiAnalysisSensors.forEach((item, index) => {
           const miniChart = aiSensorCharts[index];
@@ -2430,9 +2510,9 @@
             ? Number(latestRaw)
             : null;
 
-          miniChart.data.labels = history.labels;
+          miniChart.data.labels = [...history.labels];
 
-          miniChart.data.datasets[0].data = values;
+          miniChart.data.datasets[0].data = [...values];
 
           miniChart.data.datasets[1].data = history.labels.map(() =>
             band ? band.lower : null,
@@ -2454,7 +2534,9 @@
 
           if (meta) {
             meta.textContent =
-              latest == null ? "현재값 —" : `현재 ${fmtNum(latest, 1)} ${unit}`;
+              latest == null
+                ? "구간 마지막값 —"
+                : `구간 마지막 ${fmtNum(latest, 1)} ${unit}`;
           }
         });
       }
@@ -2510,23 +2592,19 @@
 
       // 모달의 "상세 보기 (센서 분석)" 실행
       function focusPrimaryFactor() {
-        const found = getPrimaryAnomaly();
+        if (!anomalyRecord || anomalyRecord.equipmentId !== selectedEquipmentId)
+          return;
 
-        if (!found) return;
-
-        const [componentKey, component] = found;
-
-        const sensors = getTopAnalysisSensors(component);
+        const sensors = anomalyRecord.analysisSensors;
 
         if (!sensors.length) return;
 
-        aiAnalysisEquipmentId = selectedEquipmentId;
-
-        aiAnalysisSensors = sensors;
+        aiAnalysisEquipmentId = anomalyRecord.equipmentId;
+        aiAnalysisSensors = [...sensors];
 
         aiAnalysisContext = {
-          componentKey,
-          level: riskClass(component.risk_level),
+          componentKey: anomalyRecord.componentKey,
+          level: anomalyRecord.level,
         };
 
         // 모달을 넓은 분석 상태로 전환
@@ -2534,7 +2612,7 @@
 
         if (dialog) dialog.classList.add("analysis-open");
 
-        // 같은 모달 내부에서 그래프 3개 표시
+        // 저장된 이상 구간으로 그래프 표시
         renderAiSensorAnalysis();
       }
 
@@ -2612,6 +2690,8 @@
       let aiAnalysisEquipmentId = null;
       let aiAnalysisContext = null;
       let aiSensorCharts = [];
+      // 현재 열린 이상 팝업의 이상 구간 기록
+      let anomalyRecord = null;
 
       function fmtNum(n, digits = 1) {
         return Number(n).toLocaleString("ko-KR", {
@@ -2796,7 +2876,21 @@
         }
 
         if (anomalies.length === 0) {
-          hideAiSensorAnalysis();
+          const modalOpen = document
+            .getElementById("anomaly-modal")
+            ?.classList.contains("open");
+
+          // 정상으로 복귀하면 이상 구간 기록을 여기서 종료한다.
+          // 현재 정상 데이터는 이상 구간에 포함하지 않는다.
+          if (modalOpen) {
+            finishAnomalyRecord();
+          }
+
+          // 팝업이 이미 열려 있으면 마지막 이상 상세 내용을 그대로 유지한다.
+          if (!modalOpen) {
+            hideAiSensorAnalysis();
+          }
+
           maybeAutoOpenAnomalyModal("normal");
           if (missingKeys.length === 0) {
             if (alertBanner) alertBanner.className = "alert-banner normal";
@@ -2836,11 +2930,15 @@
               aiInsight.textContent = `현재 수신된 부품에서는 이상이 감지되지 않았습니다. ${missingNames} 데이터가 도착하면 전체 상태를 다시 판별합니다.`;
           }
           if (detailButton) detailButton.disabled = true;
-          if (
-            document.getElementById("anomaly-modal")?.classList.contains("open")
-          )
-            closeAnomalyModal();
         } else {
+          const modalOpen = document
+            .getElementById("anomaly-modal")
+            ?.classList.contains("open");
+
+          // 팝업이 열려 있고 같은 이상 구간이 진행 중이면 계속 기록한다.
+          if (modalOpen) {
+            appendAnomalyRecord();
+          }
           // 메인 알림과 모달 모두 같은 규칙(danger > warning > caution)으로 대표 이상을 선택한다.
           const primary = getPrimaryAnomaly(prediction) || anomalies[0];
           const [key, c] = primary;
@@ -2899,10 +2997,6 @@
           if (aiInsight)
             aiInsight.textContent = `${COMPONENT_LABEL[key]}에서 ${statusText(level)} 상태가 감지되었습니다. ${factor}를 포함한 영향 센서 추이와 설비 상태를 함께 확인하세요.`;
           if (detailButton) detailButton.disabled = false;
-          if (
-            document.getElementById("anomaly-modal")?.classList.contains("open")
-          )
-            populateAnomalyModal(prediction);
           maybeAutoOpenAnomalyModal(level); // warning / danger 진입 시 자동 팝업
         }
 
@@ -2914,11 +3008,9 @@
       }
 
       // ==================== 헤더/연결 상태 갱신 ====================
-      // cycle_id, 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
+      // 경과시간, 최근 수신, API 데이터 지연 여부를 표시한다.
       // 연결 상태와 AI 설비 위험도는 분리해서 표현한다.
       function updateHeader(data) {
-        document.getElementById("cycle-id").textContent =
-          data.cycle_id ?? data.event_id ?? "—";
         document.getElementById("elapsed-sec").textContent =
           data.elapsed_sec ?? "—";
 
@@ -3294,8 +3386,8 @@
 
       // 설비 선택이 바뀌면 station 라벨, 센서표, AI 진단, 차트를 마지막 수신 데이터로 즉시 다시 표시한다.
       function renderSelectedEquipment() {
-        // 설비가 바뀌면 이전 설비의 AI 상세 분석 그래프를 초기화한다.
-        hideAiSensorAnalysis();
+        // 설비가 바뀌면 이전 설비의 이상 팝업을 닫는다.
+        closeAnomalyModal();
 
         const labelEl = document.getElementById("unit-label");
         if (labelEl) labelEl.textContent = selectedEquipmentId.toUpperCase();
