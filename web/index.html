@@ -122,6 +122,32 @@
         align-items: center;
         gap: 14px;
       }
+      .demo-popup-toggle {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--bg-panel);
+        color: var(--text-secondary);
+        font-size: 10.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+      }
+      .demo-popup-toggle:hover {
+        color: var(--text-primary);
+        border-color: rgba(47, 224, 196, 0.38);
+      }
+      .demo-popup-toggle input {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
       .connection-badge {
         display: flex;
         align-items: center;
@@ -1505,6 +1531,14 @@
             >
           </div>
         </div>
+        <div class="header-divider"></div>
+        <label
+          class="demo-popup-toggle"
+          title="체크하면 AI 이상 팝업이 자동으로 열리지 않습니다."
+        >
+          <input id="disable-auto-anomaly-popup" type="checkbox" />
+          <span>이상 팝업 자동 표시 안 함</span>
+        </label>
       </div>
     </header>
 
@@ -2634,9 +2668,21 @@
       // 전체 자동 팝업 사이에 최소 30초 간격을 둔다.
       const AUTO_MODAL_MIN_INTERVAL_MS = 30_000;
       let lastAutoModalOpenedAt = 0;
+      const autoAnomalyPopupToggle = document.getElementById(
+        "disable-auto-anomaly-popup",
+      );
+      let autoAnomalyPopupDisabled = Boolean(
+        autoAnomalyPopupToggle?.checked,
+      );
+
+      autoAnomalyPopupToggle?.addEventListener("change", () => {
+        autoAnomalyPopupDisabled = autoAnomalyPopupToggle.checked;
+        if (autoAnomalyPopupDisabled) closeAnomalyModal();
+      });
 
       function maybeAutoOpenAnomalyModal(level) {
         const equipmentId = selectedEquipmentId;
+        if (autoAnomalyPopupDisabled) return;
         if (level !== "warning" && level !== "danger") return;
 
         const modal = document.getElementById("anomaly-modal");
@@ -2650,7 +2696,10 @@
 
         // renderDiagnosis()가 끝난 뒤 현재 prediction으로 모달을 연다.
         setTimeout(() => {
-          if (selectedEquipmentId === equipmentId) {
+          if (
+            !autoAnomalyPopupDisabled &&
+            selectedEquipmentId === equipmentId
+          ) {
             openAnomalyModal();
           }
         }, 0);
