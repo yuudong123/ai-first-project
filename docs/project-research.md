@@ -154,7 +154,7 @@ Git push
 |---|---|---|---|
 | 협업 | Git, GitHub | 브랜치·PR·코드리뷰·버전관리 | 필수 |
 | 데이터 | Python, pandas, NumPy, SciPy, Parquet | 원본 파싱, 특징 추출, 경량 저장 | 필수 |
-| 모델 | scikit-learn RandomForest | 저사양 CPU 기반 다중 분류 | 필수 |
+| 모델 | scikit-learn, LightGBM 또는 RandomForest | 저사양 CPU 기반 다중 분류 | 필수 |
 | 설명 | SHAP | 부품 상태 판단에 영향 준 센서 설명 | 필수 |
 | 스트리밍 | Apache Kafka | 보류 Test 센서 데이터 재생과 예측 이벤트 전달 | 필수 |
 | API | FastAPI, Pydantic | 최신 예측·설비 상태 조회 API | 필수 |

@@ -13,9 +13,9 @@ HydroTwin 통합 데이터/모델 파이프라인.
     valve
     pump
     accumulator
-- 최종 모델: Random Forest 5개 분류기를 하나의 joblib 번들로 저장
+- 최종 모델: LightGBM 5개 분류기를 하나의 joblib 번들로 저장
 - 모델 파일:
-    models/predict/integrated_rf.joblib
+    models/predict/integrated_lgbm.joblib
 - 최종 예측 반환 형식:
     {
       "stable_flag": 0,
@@ -43,6 +43,8 @@ from typing import Any, Iterable, Mapping
 import joblib
 import numpy as np
 import pandas as pd
+
+from lightgbm import LGBMClassifier
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
@@ -158,7 +160,7 @@ MODEL_DIR = (
 
 MODEL_PATH = (
     MODEL_DIR
-    / "integrated_rf.joblib"
+    / "integrated_lgbm.joblib"
 )
 
 SPLIT_PATH = (
@@ -1193,10 +1195,10 @@ def apply_sensor_offsets(
 
 
 # ============================================================
-# 6. Random Forest 검증
+# 6. RandomForest / LightGBM 비교
 # ============================================================
 
-def evaluate_rf_validation(
+def compare_models(
     features: pd.DataFrame,
     profile: pd.DataFrame,
     train_ids: Iterable[int],
@@ -1204,7 +1206,7 @@ def evaluate_rf_validation(
     window_sec: int,
 ) -> pd.DataFrame:
     """
-    지정된 분할과 지표로 Random Forest 검증.
+    같은 분할과 지표로 RandomForest와 LightGBM 비교.
     Test는 사용하지 않는다.
     """
     results: list[
@@ -1232,6 +1234,13 @@ def evaluate_rf_validation(
                     n_estimators=200,
                     random_state=RANDOM_STATE,
                     n_jobs=2,
+                ),
+            "LightGBM":
+                LGBMClassifier(
+                    n_estimators=200,
+                    random_state=RANDOM_STATE,
+                    n_jobs=2,
+                    verbosity=-1,
                 ),
         }
 
@@ -1279,7 +1288,7 @@ def evaluate_rf_validation(
 # 7. 입력 시간 선택
 # ============================================================
 
-def evaluate_rf_window(
+def evaluate_lgbm_window(
     features: pd.DataFrame,
     profile: pd.DataFrame,
     train_ids: Iterable[int],
@@ -1305,10 +1314,11 @@ def evaluate_rf_window(
             target,
         )
 
-        model = RandomForestClassifier(
+        model = LGBMClassifier(
             n_estimators=200,
             random_state=RANDOM_STATE,
-            n_jobs=2
+            n_jobs=2,
+            verbosity=-1,
         )
 
         model.fit(
@@ -1355,17 +1365,17 @@ def select_final_window(
 ) -> tuple[int, pd.DataFrame]:
     """현재 계약은 10초로 고정하며, 해당 구간의 검증 성능만 반환한다."""
     features = load_window_features(10, processed_dir)
-    results = evaluate_rf_window(
+    results = evaluate_lgbm_window(
         features, profile, splits["train_ids"], splits["val_ids"], 10,
     )
     return 10, results
 
 
 # ============================================================
-# 8. Random Forest 통합모델 학습 / 저장
+# 8. LightGBM 통합모델 학습 / 저장
 # ============================================================
 
-def train_integrated_rf(
+def train_integrated_lgbm(
     profile: pd.DataFrame | None = None,
     splits: Mapping[str, Iterable[int]] | None = None,
     processed_dir: Path | str | None = None,
@@ -1374,8 +1384,8 @@ def train_integrated_rf(
     training_sensor_offsets: Mapping[str, float] | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
     """
-    5개 Random Forest 분류기를 학습한 뒤
-    하나의 integrated_rf.joblib 파일에 묶어 저장한다.
+    5개 LightGBM 분류기를 학습한 뒤
+    하나의 integrated_lgbm.joblib 파일에 묶어 저장한다.
 
     별도의 target별 joblib 파일은 만들지 않는다.
     """
@@ -1424,7 +1434,7 @@ def train_integrated_rf(
 
     final_models: dict[
         str,
-        RandomForestClassifier,
+        LGBMClassifier,
     ] = {}
 
     test_rows: list[
@@ -1465,10 +1475,11 @@ def train_integrated_rf(
             target,
         )
 
-        model = RandomForestClassifier(
+        model = LGBMClassifier(
             n_estimators=200,
             random_state=RANDOM_STATE,
-            n_jobs=2
+            n_jobs=2,
+            verbosity=-1,
         )
 
         model.fit(
@@ -1561,7 +1572,7 @@ def train_integrated_rf(
 
     bundle = {
         "model_type":
-            "RandomForest",
+            "LightGBM",
         "bundle_version":
             1,
         "models":
@@ -1924,7 +1935,7 @@ def predict(
     model_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """
-    통합 Random Forest 파일 하나를 사용해 5개 결과를 예측한다.
+    통합 LightGBM 파일 하나를 사용해 5개 결과를 예측한다.
 
     반환 구조는 고정:
     {
@@ -2103,7 +2114,7 @@ def explain(
     top_n: int = 5,
 ) -> dict[str, list[dict[str, Any]]]:
     """
-    통합 Random Forest 내부 각 타깃 모델의
+    통합 LightGBM 내부 각 타깃 모델의
     평균 |SHAP| 상위 특징을 JSON 가능한 dict로 반환한다.
     """
     try:
@@ -2349,7 +2360,7 @@ def main_train() -> None:
         10
     )
 
-    comparison = evaluate_rf_validation(
+    comparison = compare_models(
         features_10,
         profile,
         splits["train_ids"],
@@ -2358,7 +2369,7 @@ def main_train() -> None:
     )
 
     print(
-        "\n=== 10초 Random Forest Validation ==="
+        "\n=== 10초 RandomForest / LightGBM Validation 비교 ==="
     )
 
     print(
@@ -2367,7 +2378,7 @@ def main_train() -> None:
         )
     )
 
-    bundle, test_metrics = train_integrated_rf(
+    bundle, test_metrics = train_integrated_lgbm(
         profile=profile,
         splits=splits,
     )
@@ -2433,7 +2444,7 @@ def main_evaluate() -> None:
 def main_predict() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "HydroTwin 통합 Random Forest 예측"
+            "HydroTwin 통합 LightGBM 예측"
         )
     )
 
@@ -2514,7 +2525,7 @@ def main_predict() -> None:
 def main_explain() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "HydroTwin 통합 Random Forest SHAP 설명"
+            "HydroTwin 통합 LightGBM SHAP 설명"
         )
     )
 

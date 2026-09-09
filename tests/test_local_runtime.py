@@ -48,7 +48,7 @@ def test_offset_keeps_original_features_and_other_sensors():
 
 
 def test_training_defaults_to_ten_seconds():
-    assert inspect.signature(p.train_integrated_rf).parameters['final_window_sec'].default == 10
+    assert inspect.signature(p.train_integrated_lgbm).parameters['final_window_sec'].default == 10
 
 
 def test_atomic_promotion_keeps_backup(tmp_path):
@@ -63,13 +63,17 @@ def test_atomic_promotion_keeps_backup(tmp_path):
     assert candidate.read_bytes()==b'new-model'
 
 
-def test_random_forest_importance_and_prediction_contract():
+def test_native_tree_shap_and_prediction_contract():
     from src.runtime.inference import diagnose
+    class Booster:
+        def predict(self, features, pred_contrib=False):
+            assert pred_contrib
+            return np.arange(18,dtype=float).reshape(1,18)
     class Model:
         def __init__(self,value):
             self.value = value
             self.classes_ = np.array([value])
-            self.feature_importances_ = np.arange(17,dtype=float)
+            self.booster_ = Booster()
         def predict(self, features):
             assert list(features.columns)==p.MEAN_FEATURE_COLUMNS
             return np.array([self.value])

@@ -19,7 +19,7 @@
 UCI 원본 TXT
 → 전처리·특징 추출
 → Train/Validation/Test 분리
-→ RandomForest 학습·평가
+→ RandomForest·LightGBM 학습·평가
 → 모델·라벨 매핑·SHAP 결과 저장
 
 [실시간 시연]
@@ -110,7 +110,7 @@ Unity는 Kafka에 직접 연결하지 않는다. Kafka를 소비하는 백엔드
 
 1. 냉각기, 밸브, 펌프, 축압기 모델을 각각 학습한다.
 2. RandomForest를 기준 모델로 사용한다.
-3. 동일한 분할·평가지표로 RandomForest 성능을 검증한다.
+3. LightGBM과 동일한 분할·평가지표로 비교한다.
 4. Accuracy, Macro F1과 부품별 혼동행렬을 계산한다.
 5. 10초, 20초, 30초, 60초 조기판별 성능을 비교한다.
 6. 모든 선택이 끝난 뒤 Test 데이터로 최종 성능을 한 번 평가한다.

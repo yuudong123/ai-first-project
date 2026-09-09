@@ -38,7 +38,7 @@ def main():
     features.to_parquet(processed / 'features_10s.parquet', index=False)
     if not p.MODEL_PATH.exists() or args.rebuild_model:
         candidate = p.MODEL_PATH.with_name(f'bootstrap_{uuid.uuid4().hex}.joblib')
-        bundle, metrics = p.train_integrated_rf(profile, splits, final_window_sec=10, model_path=candidate)
+        bundle, metrics = p.train_integrated_lgbm(profile, splits, final_window_sec=10, model_path=candidate)
         if p.MODEL_PATH.exists():
             shutil.copy2(p.MODEL_PATH,p.MODEL_PATH.with_name(f'bootstrap_backup_{uuid.uuid4().hex}.joblib'))
         os.replace(candidate,p.MODEL_PATH)
