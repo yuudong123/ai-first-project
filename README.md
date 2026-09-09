@@ -23,7 +23,7 @@ kafka/producer.py
   → 설비 3대의 서로 다른 센서값 + 공통 계절 변화
   → Kafka hydraulic.sensor.multi.raw
   ├─ kafka/consumer.py
-  │    → 설비별 독립 10초 버퍼 → LightGBM/TreeSHAP
+  │    → 설비별 독립 10초 버퍼 → Random Forest/특징 중요도
   │    → artifacts/runtime/latest.json
   │    → FastAPI → 웹 UI + Unity WebGL
   └─ src/runtime/monitor.py
@@ -72,7 +72,7 @@ Git에서 제외되는 다음 자산이 필요합니다.
 
 - `data/raw/uci_hydraulic/extracted/`
 - `data/processed/simulator/uci_1hz_17sensors.npz`
-- `models/predict/integrated_lgbm.joblib`
+- `models/predict/integrated_rf.joblib`
 - Unity WebGL 빌드의 `Build/pro-build.*`
 
 설정과 자세한 검증 방법은 [Docker 실행 가이드](docs/local-runtime.md)를 참고하세요.

@@ -26,7 +26,7 @@ from typing import Any, Mapping
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PRODUCTION_MODEL = (
-    PROJECT_ROOT / "models" / "predict" / "integrated_lgbm.joblib"
+    PROJECT_ROOT / "models" / "predict" / "integrated_rf.joblib"
 )
 DEFAULT_CANDIDATE_DIR = PROJECT_ROOT / "models" / "predict" / "candidates"
 DEFAULT_REPORT_DIR = PROJECT_ROOT / "artifacts" / "retraining"
@@ -306,7 +306,7 @@ def run_retraining(
     pipeline.validate_splits(training_profile, training_splits)
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    candidate_path = cfg.candidate_dir / f"integrated_lgbm_{run_id}.joblib"
+    candidate_path = cfg.candidate_dir / f"integrated_rf_{run_id}.joblib"
     incumbent_original, incumbent_seasonal = _incumbent_metrics(
         cfg.production_model_path,
         profile=training_profile,
@@ -315,7 +315,7 @@ def run_retraining(
         seasonal_offsets=offsets,
     )
 
-    _, metrics_frame = pipeline.train_integrated_lgbm(
+    _, metrics_frame = pipeline.train_integrated_rf(
         profile=training_profile,
         splits=training_splits,
         processed_dir=processed_dir,
