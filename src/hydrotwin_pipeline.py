@@ -160,7 +160,7 @@ MODEL_DIR = (
 
 MODEL_PATH = (
     MODEL_DIR
-    / "integrated_lgbm.joblib"
+    / "integrated_rf.joblib"
 )
 
 SPLIT_PATH = (
@@ -1288,7 +1288,7 @@ def compare_models(
 # 7. 입력 시간 선택
 # ============================================================
 
-def evaluate_lgbm_window(
+def evaluate_rf_window(
     features: pd.DataFrame,
     profile: pd.DataFrame,
     train_ids: Iterable[int],
@@ -1314,11 +1314,10 @@ def evaluate_lgbm_window(
             target,
         )
 
-        model = LGBMClassifier(
+        model = RandomForestClassifier(
             n_estimators=200,
             random_state=RANDOM_STATE,
-            n_jobs=2,
-            verbosity=-1,
+            n_jobs=2
         )
 
         model.fit(
@@ -1365,7 +1364,7 @@ def select_final_window(
 ) -> tuple[int, pd.DataFrame]:
     """현재 계약은 10초로 고정하며, 해당 구간의 검증 성능만 반환한다."""
     features = load_window_features(10, processed_dir)
-    results = evaluate_lgbm_window(
+    results = evaluate_rf_window(
         features, profile, splits["train_ids"], splits["val_ids"], 10,
     )
     return 10, results
@@ -1375,7 +1374,7 @@ def select_final_window(
 # 8. LightGBM 통합모델 학습 / 저장
 # ============================================================
 
-def train_integrated_lgbm(
+def train_integrated_rf(
     profile: pd.DataFrame | None = None,
     splits: Mapping[str, Iterable[int]] | None = None,
     processed_dir: Path | str | None = None,
@@ -1385,7 +1384,7 @@ def train_integrated_lgbm(
 ) -> tuple[dict[str, Any], pd.DataFrame]:
     """
     5개 LightGBM 분류기를 학습한 뒤
-    하나의 integrated_lgbm.joblib 파일에 묶어 저장한다.
+    하나의 integrated_rf.joblib 파일에 묶어 저장한다.
 
     별도의 target별 joblib 파일은 만들지 않는다.
     """
@@ -1434,7 +1433,7 @@ def train_integrated_lgbm(
 
     final_models: dict[
         str,
-        LGBMClassifier,
+        RandomForestClassifier,
     ] = {}
 
     test_rows: list[
@@ -1475,11 +1474,10 @@ def train_integrated_lgbm(
             target,
         )
 
-        model = LGBMClassifier(
+        model = RandomForestClassifier(
             n_estimators=200,
             random_state=RANDOM_STATE,
-            n_jobs=2,
-            verbosity=-1,
+            n_jobs=2
         )
 
         model.fit(
@@ -1572,7 +1570,7 @@ def train_integrated_lgbm(
 
     bundle = {
         "model_type":
-            "LightGBM",
+            "RandomForest",
         "bundle_version":
             1,
         "models":
@@ -1935,7 +1933,7 @@ def predict(
     model_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """
-    통합 LightGBM 파일 하나를 사용해 5개 결과를 예측한다.
+    통합 Random Forest 파일 하나를 사용해 5개 결과를 예측한다.
 
     반환 구조는 고정:
     {
@@ -2378,7 +2376,7 @@ def main_train() -> None:
         )
     )
 
-    bundle, test_metrics = train_integrated_lgbm(
+    bundle, test_metrics = train_integrated_rf(
         profile=profile,
         splits=splits,
     )
