@@ -17,6 +17,10 @@
       /* ==================== 공통 테마/색상 ====================
    기존 HydroTwin 색상 팔레트. UI 색상을 바꿀 때는 이 변수부터 확인한다. */
       :root {
+        --app-min-width: 1280px;
+        --app-min-height: 960px;
+        --bottom-panel-height: 360px;
+        --side-panel-height: 353px;
         --bg-base: #0a0f14;
         --bg-panel: #0f161d;
         --bg-panel-2: #131b23;
@@ -42,14 +46,31 @@
       }
       html,
       body {
-        min-height: 100%;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
         background: var(--bg-base);
       }
       body {
         color: var(--text-primary);
         font-family: var(--font-body);
         line-height: 1.5;
-        min-width: 320px;
+        min-width: 0;
+      }
+      .app-shell {
+        width: 100%;
+        height: 100%;
+        min-width: var(--app-min-width);
+        min-height: var(--app-min-height);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        overflow: hidden;
+        transform-origin: top left;
+      }
+      .app-shell > * {
+        min-width: 0;
       }
       button {
         font: inherit;
@@ -325,7 +346,10 @@
       }
 
       .dashboard {
-        width: min(100%, 1920px);
+        width: 100%;
+        max-width: 1920px;
+        height: 100%;
+        min-height: 0;
         margin: 0 auto;
         padding: 14px 16px 18px;
         display: flex;
@@ -463,10 +487,12 @@
 
       /* 메인: Unity + 우측 관제 */
       .inspection-grid {
+        flex: 1 1 auto;
+        min-height: 0;
         display: grid;
         grid-template-columns: minmax(0, 1fr) 6px var(--side-width, 400px);
         gap: 8px;
-        align-items: start;
+        align-items: stretch;
       }
 
       /* Unity ↔ 우측 센서 패널 너비 조절 손잡이
@@ -534,6 +560,9 @@
 
       .unity-card {
         min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
       }
       .unity-toolbar-right {
         display: flex;
@@ -570,8 +599,9 @@
       }
       .unity-wrap {
         position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
         width: 100%;
-        aspect-ratio: 16/9;
         background: #000;
         overflow: hidden;
       }
@@ -608,6 +638,8 @@
       }
 
       .sensor-card {
+        height: var(--side-panel-height);
+        align-self: start;
         display: flex;
         flex-direction: column;
         min-height: 0;
@@ -891,6 +923,8 @@
 
       /* 하단 차트 */
       .trend-card {
+        flex: 0 0 var(--bottom-panel-height);
+        height: var(--bottom-panel-height);
         min-width: 0;
       }
       .trend-header {
@@ -1411,91 +1445,10 @@
         }
       }
 
-      @media (max-width: 1100px) {
-        .inspection-grid {
-          grid-template-columns: 1fr;
-        }
-        .col-resizer {
-          display: none;
-        }
-        .header-right {
-          gap: 8px;
-        }
-        .live-meta {
-          gap: 8px;
-        }
-        .health-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-        .health-item:nth-child(2) {
-          border-right: 0;
-        }
-        .health-item:nth-child(-n + 2) {
-          border-bottom: 1px solid var(--border-soft);
-        }
-      }
-      @media (max-width: 800px) {
-        .top-header {
-          position: static;
-          align-items: flex-start;
-          flex-direction: column;
-        }
-        .header-right {
-          width: 100%;
-          justify-content: space-between;
-          flex-wrap: wrap;
-        }
-        .header-divider {
-          display: none;
-        }
-        .alert-banner {
-          align-items: flex-start;
-        }
-        .alert-actions {
-          display: none;
-        }
-        .health-bar {
-          flex-direction: column;
-        }
-        .health-label {
-          border-right: 0;
-          border-bottom: 1px solid var(--border-soft);
-          padding: 8px 12px;
-        }
-        .trend-metrics {
-          display: none;
-        }
-        .footer {
-          flex-direction: column;
-          align-items: flex-start;
-        }
-      }
-      @media (max-width: 560px) {
-        .dashboard {
-          padding: 9px;
-        }
-        .health-grid {
-          grid-template-columns: 1fr;
-        }
-        .health-item {
-          border-right: 0 !important;
-          border-bottom: 1px solid var(--border-soft) !important;
-        }
-        .live-meta {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-        }
-        .connection-badge {
-          width: 100%;
-          justify-content: center;
-        }
-        .brand {
-          min-width: 0;
-        }
-      }
     </style>
   </head>
   <body>
+    <div class="app-shell" id="app-shell">
     <!-- ==================== 상단 헤더 ====================
      현재 선택 설비, API 수신 상태, 경과/수신 횟수를 표시한다. -->
     <header class="top-header">
@@ -1708,6 +1661,7 @@
         >FastAPI · Kafka · Unity WebGL · AI Prediction</span
       >
     </footer>
+    </div>
 
     <!-- 이상 상세 모달: 평소에는 숨김, "이상 상세 보기" 클릭 시 표시 -->
     <div
@@ -1915,6 +1869,31 @@
       const UNITY_METHOD_NAME = "ApplyWebState";
       const UNITY_CLEAR_METHOD = "ClearState";
       let unityInstance = null;
+
+      // 일반 웹페이지는 브라우저 창의 최소 크기를 OS에 강제할 수 없다.
+      // 기준 크기 아래에서는 앱 전체를 비례 축소하고, 기준 크기 이상에서는
+      // 우측 패널과 하단 차트 크기를 유지한 채 Unity 영역만 남은 공간을 사용한다.
+      const APP_MIN_WIDTH = 1280;
+      const APP_MIN_HEIGHT = 960;
+
+      function fitAppShellToViewport() {
+        const shell = document.getElementById("app-shell");
+        if (!shell) return;
+
+        const viewportWidth = Math.max(window.innerWidth, 1);
+        const viewportHeight = Math.max(window.innerHeight, 1);
+        const scale = Math.min(
+          1,
+          viewportWidth / APP_MIN_WIDTH,
+          viewportHeight / APP_MIN_HEIGHT,
+        );
+
+        shell.style.width = `${viewportWidth / scale}px`;
+        shell.style.height = `${viewportHeight / scale}px`;
+        shell.style.transform = `scale(${scale})`;
+
+        if (chart) chart.resize();
+      }
 
       // ==================== 센서/부품 메타데이터 ====================
       // 화면, 차트, 기준범위 검증에서 공통으로 사용하는 17개 센서 순서.
@@ -3547,6 +3526,8 @@
           productName: "HydroTwin",
           productVersion: "0.1",
           cacheControl: () => "no-store",
+          matchWebGLToCanvasSize: true,
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
         };
 
         const script = document.createElement("script");
@@ -3648,6 +3629,8 @@
       // ==================== 페이지 최초 실행 ====================
       // 1) 차트 생성 → 2) 사이드바 리사이저 초기화 → 3) 센서 기준범위 로드
       // 4) Unity 로드 → 5) 즉시 API 조회 → 6) 이후 1초 폴링
+      fitAppShellToViewport();
+      window.addEventListener("resize", fitAppShellToViewport);
       initChart();
       initResizers();
       loadReferenceBands();
