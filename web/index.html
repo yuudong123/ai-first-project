@@ -352,9 +352,11 @@
         min-height: 0;
         margin: 0 auto;
         padding: 14px 16px 18px;
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 6px var(--side-width, 400px);
+        grid-template-rows: auto minmax(0, 1fr) var(--bottom-panel-height);
+        column-gap: 8px;
+        row-gap: 14px;
       }
       .card {
         background: var(--bg-panel);
@@ -396,6 +398,8 @@
 
       /* 설비 건전성 바 */
       .health-bar {
+        grid-column: 1 / -1;
+        grid-row: 1;
         display: flex;
         align-items: stretch;
         min-height: 46px;
@@ -485,20 +489,17 @@
         color: var(--danger);
       }
 
-      /* 메인: Unity + 우측 관제 */
+      /* 메인: 자식 요소를 dashboard 그리드에 직접 배치한다. */
       .inspection-grid {
-        flex: 1 1 auto;
-        min-height: 0;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 6px var(--side-width, 400px);
-        gap: 8px;
-        align-items: stretch;
+        display: contents;
       }
 
       /* Unity ↔ 우측 센서 패널 너비 조절 손잡이
    - 기존 브랜치의 리사이즈 기능만 현재 디자인에 맞게 이식
    - API / Chart / Unity 연결 로직과는 무관한 UI 기능 */
       .col-resizer {
+        grid-column: 2;
+        grid-row: 2 / 4;
         align-self: stretch;
         min-height: 100%;
         background: var(--bg-panel);
@@ -559,6 +560,8 @@
       }
 
       .unity-card {
+        grid-column: 1;
+        grid-row: 2;
         min-width: 0;
         min-height: 0;
         display: flex;
@@ -638,8 +641,10 @@
       }
 
       .sensor-card {
-        height: var(--side-panel-height);
-        align-self: start;
+        grid-column: 3;
+        grid-row: 2 / 4;
+        height: auto;
+        align-self: stretch;
         display: flex;
         flex-direction: column;
         min-height: 0;
@@ -923,7 +928,8 @@
 
       /* 하단 차트 */
       .trend-card {
-        flex: 0 0 var(--bottom-panel-height);
+        grid-column: 1;
+        grid-row: 3;
         height: var(--bottom-panel-height);
         min-width: 0;
       }
