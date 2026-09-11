@@ -30,6 +30,21 @@ pipeline {
                 '''
             }
         }
+        stage('Administrator approval') {
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
+            steps {
+                script {
+                    def approver = env.JENKINS_ADMIN_USER?.trim() ?: 'admin'
+                    input(
+                        message: '검증된 빌드를 운영 환경에 배포하시겠습니까?',
+                        ok: '운영 배포 승인',
+                        submitter: approver
+                    )
+                }
+            }
+        }
         stage('Deploy') {
             steps {
                 sh '''
