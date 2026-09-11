@@ -15,17 +15,16 @@
 | 박민 | FastAPI, 예측·상태 API, 웹 UI·Chart.js, AI·Unity 연결 지원 |
 | 신종건 | Docker·Compose, pytest, Jenkins CI/CD, MLflow·재학습 데모 |
 
-## 날짜별 마일스톤
+## 마일스톤 (논리적 마일스톤)
 
-| 기간 | 핵심 목표 | 조현재 | 홍유나 | 박민 | 신종건 |
-|---|---|---|---|---|---|
-| 8/28(금) | 프로젝트 구조 확정 | 전체 일정·Unity 구조 설계, API 규격 협의 | UCI 데이터 구조·센서·라벨 분석 | FastAPI 구조 설계, API 규격 협의 | Docker·Jenkins·pytest 구조 설계 |
-| 8/31(월)~9/2(수) | 1차 기능 개발 | Unity 설비 3D 기본 구성, 상태별 색상 구현 | 데이터 전처리·EDA·특징 추출·학습 데이터 구성 | FastAPI 기본 API, 웹 기본 화면 구현 | Dockerfile·Compose·pytest 기본 환경 구성 |
-| 9/3(목)~9/4(금) | 개별 기능 1차 완성 | 임시 데이터 기반 상태 변화·부품 클릭 UI | RandomForest 1차 모델 학습·평가 | 예측 API·상태 API·Chart.js 기본 차트 | FastAPI Docker 실행·전처리/API 테스트 |
-| 9/7(월)~9/10(목) | 1차 시스템 통합 | FastAPI↔Unity 연결, 실제 예측 결과 반영 | LightGBM 비교·최종 모델 선정 및 저장 | 실제 AI 모델 FastAPI 연결, Unity API 지원 | Jenkins CI/CD 구성, 자동 테스트·빌드 연결, MLflow 실험 기록·모델 버전 관리·재학습 데모 |
-| 9/11(금) | 전체 통합·기능 동결 | Unity WebGL 빌드, 전체 서비스 최종 통합 | 최종 모델 성능 검증·발표용 결과 정리 | Web·API↔Unity WebGL 통합 확인 | Docker Compose·Jenkins 배포환경 최종 점검 |
-| 9/14(월) | 발표 준비 | 전체 데모 점검·발표 흐름·리허설 총괄 | AI 결과·성능·SHAP 발표자료 준비 | API·웹 기능 발표자료·데모 점검 | MLOps·CI/CD 발표자료·실행환경 점검 |
-| 9/15(화) | 최종 발표 | 발표·Unity 데모 | AI 파트 발표·질의응답 | API·웹 파트 발표·질의응답 | MLOps 파트 발표·질의응답 |
+| 마일스톤 | 핵심 목표 | 완료 기준 | 조현재 | 홍유나 | 박민 | 신종건 |
+|---|---|---|---|---|---|---|
+| M1. 요구사항 및 시스템 구조 확정 | 전체 시스템 구성과 데이터 흐름 정의 | Unity–Web–FastAPI–AI–MLOps 구조와 API 규격 확정 | 전체 일정·Unity 구조 설계, API 규격 협의 | UCI 데이터 구조·센서·라벨 분석 | FastAPI 구조 설계, API 규격 협의 | Docker·Jenkins·pytest 구조 설계 |
+| M2. 개별 모듈 기반 구축 | 담당 영역별 최소 실행 단위 구현 | 각 모듈이 임시 데이터로 독립 실행됨 | Unity 설비 3D 기본 구성, 센서 위치·상태 색상 구현 | 데이터 전처리·EDA·특징 추출·학습 데이터 구성 | FastAPI 기본 API와 웹 모니터링 화면 구현 | Dockerfile·Compose·pytest 기본 환경 구축 |
+| M3. 핵심 기능 완성 | 실제 서비스에 필요한 주요 기능 구현 | 예측·시각화·상호작용·컨테이너 실행이 각각 동작함 | 상태 변화, 설비·센서 선택 및 UI 상호작용 구현 | RandomForest 1차 모델 학습·평가 | 예측·상태 API와 Chart.js 센서 차트 구현 | FastAPI 컨테이너 실행 및 전처리·API 테스트 구축 |
+| M4. 모델 선정 및 시스템 연동 | 실제 데이터와 AI 예측 결과를 전체 시스템에 연결 | 실시간 센서값과 AI 결과가 Web·Unity에 정상 반영됨 | FastAPI–Unity 연동 및 실제 예측 결과 반영 | 후보 모델 비교·평가, 최종 모델 선정·저장 | AI 모델과 FastAPI 연결, Web·Unity 데이터 전달 지원 | Jenkins CI/CD, 자동 테스트·빌드, 모델 버전 관리 및 재학습 흐름 구현 |
+| M5. 통합 배포 환경 완성 | 전체 서비스를 하나의 실행 환경으로 통합 | Docker Compose로 전체 서비스 실행 및 Jenkins 승인 배포 가능 | Unity WebGL 빌드와 전체 서비스 통합 | 최종 모델 성능 및 추론 결과 검증 | Web–API–Unity WebGL 통합 확인 | Docker Compose·Jenkins 배포 환경 및 관리자 승인 단계 점검 |
+| M6. 최종 품질 검증 및 기능 동결 | 오류를 수정하고 발표 가능한 버전 확정 | 핵심 시나리오가 반복 실행되고 기능 변경이 종료됨 | 전체 데모 점검 및 Unity 최종 수정 | AI 성능·SHAP·평가 결과 정리 | 웹·API 기능과 데이터 표시 최종 점검 | CI/CD·MLOps 실행환경 및 장애 복구 흐름 점검 |
 
 ## Kafka 요구사항 보완안
 
