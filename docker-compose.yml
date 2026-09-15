@@ -1,0 +1,177 @@
+name: hydrotwin
+
+x-app: &app
+  image: hydrotwin-app:${HYDROTWIN_IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: app
+  working_dir: /app
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  kafka:
+    image: apache/kafka:4.0.1
+    container_name: hydrotwin-kafka
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://${KAFKA_ADVERTISED_HOST:-localhost}:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes: [kafka-data:/var/lib/kafka/data]
+    ports: ["${KAFKA_BIND_ADDRESS:-127.0.0.1}:9092:9092"]
+    healthcheck:
+      test: [CMD-SHELL, "bash -c '</dev/tcp/127.0.0.1/29092'"]
+      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  bootstrap:
+    <<: *app
+    profiles: [setup]
+    restart: "no"
+    command: [python, -m, src.runtime.bootstrap]
+    volumes:
+      - ${DATA_HOST_DIR:-./data}:/app/data
+      - ${MODEL_HOST_DIR:-./models}:/app/models
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime
+    mem_limit: 3g
+
+  producer:
+    <<: *app
+    container_name: hydrotwin-producer
+    command: [python, kafka/producer.py]
+    env_file: ${PROJECT_ENV_FILE:-.env}
+    environment: {KAFKA_BROKER: "kafka:29092", KAFKA_TOPIC: "hydraulic.sensor.multi.raw"}
+    volumes:
+      - type: bind
+        source: ${DATA_HOST_DIR:-./data}
+        target: /app/data
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MODEL_HOST_DIR:-./models}
+        target: /app/models
+        read_only: true
+        bind: {create_host_path: false}
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime
+    mem_limit: 2g
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  inference:
+    <<: *app
+    container_name: hydrotwin-inference
+    command: [python, -m, src.runtime.server_entry, inference]
+    environment:
+      KAFKA_BROKER: ${KAFKA_BROKER:-kafka:29092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-hydraulic.sensor.multi.raw}
+    volumes:
+      - type: bind
+        source: ${MODEL_HOST_DIR:-./models}
+        target: /app/models
+        read_only: true
+        bind: {create_host_path: false}
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime
+    mem_limit: 1g
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  monitor:
+    <<: *app
+    container_name: hydrotwin-monitor
+    command: [python, -m, src.runtime.monitor]
+    env_file: ${PROJECT_ENV_FILE:-.env}
+    environment:
+      KAFKA_BROKER: "kafka:29092"
+      KAFKA_TOPIC: "hydraulic.sensor.multi.raw"
+      JENKINS_URL: "http://jenkins:8080"
+      HYDROTWIN_STATE_URL: "http://api:8000/api/v1/state/latest"
+    volumes:
+      - type: bind
+        source: ${DATA_HOST_DIR:-./data}
+        target: /app/data
+        read_only: true
+        bind: {create_host_path: false}
+      - ${MODEL_HOST_DIR:-./models}:/app/models
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime
+    mem_limit: 2g
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  api:
+    <<: *app
+    container_name: hydrotwin-api
+    command: [python, -m, src.runtime.server_entry, api]
+    environment:
+      HYDROTWIN_RUNTIME: "1"
+      UNITY_WEBGL_PATH: /unity-build
+    volumes:
+      - ${STATE_HOST_DIR:-./artifacts/runtime}:/app/artifacts/runtime:ro
+      - type: bind
+        source: ${DATA_HOST_DIR:-./data}
+        target: /app/data
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${UNITY_WEBGL_HOST_PATH:-./web}
+        target: /unity-build
+        read_only: true
+        bind: {create_host_path: false}
+    ports: ["${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8000}:8000"]
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  jenkins:
+    image: hydrotwin-jenkins:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: jenkins
+    container_name: hydrotwin-jenkins
+    # 로컬 시연용 Docker 소켓 권한. 외부 공개 서버에서는 별도 에이전트로 분리한다.
+    user: "0:0"
+    restart: unless-stopped
+    env_file: ${PROJECT_ENV_FILE:-.env}
+    environment:
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=false -Xms256m -Xmx768m
+      GIT_REPOSITORY_URL: ${GIT_REPOSITORY_URL:-https://github.com/yuudong123/ai-first-project.git}
+      GIT_DEPLOY_BRANCH: ${GIT_DEPLOY_BRANCH:-dev}
+      GIT_CREDENTIAL_ID: ${GIT_CREDENTIAL_ID:-hydrotwin-github}
+      PROJECT_HOST_DIR: ${PROJECT_HOST_DIR:-C:/ai-first-project}
+      DATA_HOST_DIR: ${DATA_HOST_DIR:-C:/ai-first-project/data}
+      MODEL_HOST_DIR: ${MODEL_HOST_DIR:-C:/ai-first-project/models}
+      STATE_HOST_DIR: ${STATE_HOST_DIR:-C:/ai-first-project/artifacts/runtime}
+      PROJECT_ENV_FILE: /project/.env
+    ports: ["${JENKINS_BIND_ADDRESS:-127.0.0.1}:8080:8080"]
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 전용 개발 서버의 dev 작업 폴더다. Jenkins는 검증 성공 후에만 fast-forward한다.
+      - ${PROJECT_HOST_DIR:-.}:/project
+    mem_limit: 1536m
+
+volumes:
+  kafka-data:
+  jenkins-data:

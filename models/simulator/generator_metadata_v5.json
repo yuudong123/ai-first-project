@@ -1,0 +1,49 @@
+{
+  "version": "v5",
+  "design": "phase_aware_anchored_offset_lstm",
+  "sensor_names": [
+    "PS1",
+    "PS2",
+    "PS3",
+    "PS4",
+    "PS5",
+    "PS6",
+    "EPS1",
+    "FS1",
+    "FS2",
+    "TS1",
+    "TS2",
+    "TS3",
+    "TS4",
+    "VS1",
+    "CE",
+    "CP",
+    "SE"
+  ],
+  "sensor_count": 17,
+  "window_size": 30,
+  "cycle_seconds": 60,
+  "input_feature_count": 18,
+  "target": "next_sensor_offset_from_same_record_start",
+  "training_records": 1764,
+  "validation_records": 441,
+  "training_windows": 105840,
+  "validation_windows": 26460,
+  "epochs_trained": 19,
+  "best_epoch": 12,
+  "validation_mse_scaled": 0.11363539844751358,
+  "validation_mae_scaled": 0.22567693889141083,
+  "training_source": "UCI Raw 17 Sensors Only",
+  "generated_data_used_for_training": false,
+  "records_joined_for_training": false,
+  "raw_pattern_basis": {
+    "ts1_position_min_second": 12,
+    "ts1_position_max_second": 40,
+    "ts1_position_mean_range": 0.6056730102,
+    "ts1_end_minus_start_mean": 0.0160344373
+  },
+  "sensor_bounds_source": "UCI Raw training records only",
+  "seed_local_bound_sensors": [
+    "PS4"
+  ]
+}
