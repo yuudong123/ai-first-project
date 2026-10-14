@@ -10,7 +10,7 @@
 | 개발 형태·기간 | 4인 팀, 2026-08-28 ~ 2026-09-15 |
 | 데이터 | UCI Condition Monitoring of Hydraulic Systems |
 | 시연 입력 | V5 생성 모델 기반 설비 3대 × 센서 17개, 1초 갱신 |
-| AI | LightGBM 부품·안정 상태 판별, TreeSHAP |
+| AI | LightGBM 부품·안정 상태 판별, 예측에 영향을 준 센서 분석(TreeSHAP) |
 | 서비스 | Kafka · FastAPI · Web · Unity WebGL · Docker Compose · Jenkins |
 | 개인 담당 | 조현재 — 팀장, Unity 3D·WebGL, API 규격 협의, 전체 통합, 발표·데모 |
 
@@ -34,16 +34,16 @@ V5 시뮬레이터 → Kafka → 설비별 10초 버퍼 → LightGBM·TreeSHAP
                                                      └─ Unity WebGL
 ```
 
-학습·재학습·실시간 추론은 **센서별 최근 10초 평균 17개**로 입력을 맞춥니다. 세 설비는 생성 상태·추론 버퍼·드리프트 기준을 각각 유지하고 하나의 API 응답으로 전달합니다.
+학습·재학습·실시간 추론은 **센서별 최근 10초 평균 17개**로 입력을 맞춥니다. 세 설비는 센서 생성 상태·예측용 데이터·센서 변화의 비교 기준을 각각 유지하고 하나의 API 응답으로 전달합니다.
 
 ## 구현하면서 고려한 점
 
 | 고려한 점 | 구현 방법 | 관련 문서·코드 |
 |---|---|---|
-| 설비마다 서로 다른 센서값과 상태 유지 | 고정 설비 ID, Kafka key, 설비별 독립 생성 상태·추론 버퍼 사용 | [다중 설비 시험](tests/test_v5_multi_station.py), [Consumer](kafka/consumer.py) |
-| 데이터가 부족하거나 끊겼을 때의 화면 표시 | 3대가 모두 준비돼야 정상 API 응답, 초기 10초 `warming_up`, 수신 중단 시 설비별 `stale` | [실행 계약](docs/local-runtime.md), [진입점 시험](tests/test_server_entry.py) |
+| 설비마다 서로 다른 센서값과 상태 유지 | 설비 ID를 Kafka 메시지의 구분값으로 쓰고, 센서 생성 상태와 예측용 데이터를 설비별로 따로 관리 | [다중 설비 시험](tests/test_v5_multi_station.py), [Consumer](kafka/consumer.py) |
+| 데이터가 부족하거나 끊겼을 때의 화면 표시 | 3대가 모두 준비돼야 정상 API 응답, 초기 10초는 데이터 수집 중(`warming_up`), 수신이 끊긴 설비는 갱신 중단(`stale`)으로 표시 | [실행 계약](docs/local-runtime.md), [진입점 시험](tests/test_server_entry.py) |
 | Unity에서 센서 처리까지 맡지 않도록 구성 | Kafka 소비·추론은 Backend에 두고 Unity는 공통 상태 API만 조회 | [팀 작업 명세](docs/team-task-board.md), [웹·API 서버](web/serve.py) |
-| 한 설비의 상태 변화를 계절 변화로 오인하지 않도록 처리 | 설비별 기준을 유지하고 최근 60초의 3대 공통 변화·안정 offset을 확인한 뒤 재학습 요청 | [모니터 코드](src/runtime/monitor.py), [운영 설명](docs/local-runtime.md) |
+| 한 설비의 상태 변화를 계절 변화로 오인하지 않도록 처리 | 설비별 기준을 유지하고 최근 60초의 3대에서 공통으로 나타나는 변화와 변화량이 안정됐는지 확인한 뒤 재학습 요청 | [모니터 코드](src/runtime/monitor.py), [운영 설명](docs/local-runtime.md) |
 | 재학습 후 성능이 떨어지는 모델의 적용 방지 | 기존 환경과 계절 변화 환경에서 부품별 성능을 비교해 교체 여부 결정 | [승격 조건 시험](tests/test_retrain_gate.py) |
 
 ## 테스트와 참고 자료
